@@ -1,0 +1,119 @@
+# Taskfile for onboarding server
+# Install task: https://taskfile.dev/installation/
+# Run: task <command>
+
+version: '3'
+
+vars:
+  BINARY_NAME: hai-onboard
+  MAIN_PACKAGE: ./cmd/server
+  PORT: "3000"
+  PYTHON_ENV: hai
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  setup:
+    desc: Setup all prerequisites (Python, dependencies)
+    cmds:
+      - task: setup-python
+      - task: deps
+
+  setup-python:
+    desc: Setup Python/conda environment for diarization
+    cmds:
+      - ./scripts/setup-python.sh
+
+  check-python:
+    desc: Check if Python environment is ready
+    cmds:
+      - ./scripts/check-python.sh
+
+  build:
+    desc: Build the onboarding server binary
+    cmds:
+      - go build -o bin/{{.BINARY_NAME}} {{.MAIN_PACKAGE}}
+    generates:
+      - bin/{{.BINARY_NAME}}
+
+  run:
+    desc: Run the onboarding server (development)
+    deps: [check-python, build]
+    cmds:
+      - ./bin/{{.BINARY_NAME}} --port {{.PORT}}
+
+  dev:
+    desc: "Run with auto-reload (requires air: go install github.com/cosmtrek/air@latest)"
+    deps: [check-python]
+    cmds:
+      - air -c .air.toml
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test -v ./...
+
+  test-cover:
+    desc: Run tests with coverage
+    cmds:
+      - go test -v -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - 'echo "Coverage report: coverage.html"'
+
+  lint:
+    desc: Run linter (requires golangci-lint)
+    cmds:
+      - golangci-lint run
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf bin/
+      - rm -f coverage.out coverage.html
+
+  install:
+    desc: Install binary to $GOPATH/bin
+    cmds:
+      - go install {{.MAIN_PACKAGE}}
+
+  deps:
+    desc: Download Go dependencies
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  deps-update:
+    desc: Update all Go dependencies
+    cmds:
+      - go get -u ./...
+      - go mod tidy
+
+  fmt:
+    desc: Format code
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  check:
+    desc: Run all checks (fmt, vet, test)
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: test
+
+  # Docker tasks (for later)
+  check-docker:
+    desc: Check if Docker is installed and running
+    cmds:
+      - docker --version
+      - docker-compose --version
+      - 'docker info > /dev/null 2>&1 || (echo "Error: Docker daemon not running" && exit 1)'
+      - 'echo "✅ Docker is ready"'
+

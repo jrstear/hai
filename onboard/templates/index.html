@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hai Audio Lifelog - Setup</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        input[type="date"],
+        input[type="datetime-local"],
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .date-selection {
+            margin-bottom: 20px;
+        }
+
+        .date-range-inputs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .date-range-inputs input {
+            flex: 1;
+        }
+
+        .date-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+
+        .date-checkbox {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            margin: 4px 0;
+        }
+
+        .date-checkbox input[type="checkbox"] {
+            width: auto;
+            margin-right: 10px;
+        }
+
+        .status {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .status.active {
+            display: block;
+        }
+
+        .progress-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .progress-table th,
+        .progress-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .progress-table th {
+            background: #f5f5f5;
+            font-weight: 600;
+            color: #333;
+            position: sticky;
+            top: 0;
+        }
+
+        .progress-table tr:hover {
+            background: #f9f9f9;
+        }
+
+        .stage-cell {
+            min-width: 150px;
+        }
+
+        .progress-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .progress-bar {
+            flex: 1;
+            height: 20px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s;
+            width: 0%;
+        }
+
+        .progress-fill.done {
+            background: #27ae60;
+        }
+
+        .checkmark {
+            color: #27ae60;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .error {
+            color: #e74c3c;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
+        .overall-progress {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 6px;
+        }
+
+        .overall-progress h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .error-message {
+            color: #e74c3c;
+            margin-top: 10px;
+            padding: 10px;
+            background: #fee;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to Hai Audio Lifelog</h1>
+        <p class="subtitle">Set up your audio lifelog processing system</p>
+
+        <div id="onboarding">
+            <form id="setupForm">
+                <div class="form-group">
+                    <label for="apiKey">Limitless API Key</label>
+                    <input type="text" id="apiKey" name="apiKey" required 
+                           placeholder="sk-..." autocomplete="off">
+                </div>
+
+                <div class="form-group">
+                    <label for="timezone">Timezone</label>
+                    <select id="timezone" name="timezone">
+                        <option value="America/Denver">America/Denver (MST)</option>
+                        <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
+                        <option value="America/New_York">America/New_York (EST)</option>
+                        <option value="UTC">UTC</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="startTime">Start Date & Time</label>
+                    <input type="datetime-local" id="startTime" name="startTime" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="endTime">End Date & Time</label>
+                    <input type="datetime-local" id="endTime" name="endTime" required>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="reprocess" name="reprocess" style="width: auto; margin: 0;">
+                        <span>Reprocess existing data (removes and re-downloads/re-processes already completed hours)</span>
+                    </label>
+                </div>
+
+                <button type="submit" id="submitBtn">Start Processing</button>
+            </form>
+        </div>
+
+        <div id="status" class="status">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin: 0;">Processing Status</h3>
+                <button id="cancelBtn" style="display: none; padding: 8px 16px; background: #e74c3c; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;" onclick="cancelJob()">Cancel Processing</button>
+            </div>
+            <div class="overall-progress">
+                <h3>Overall Progress</h3>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="overallProgressFill"></div>
+                </div>
+                <div style="text-align: center; margin-top: 8px; color: #666; font-size: 14px;">
+                    <span id="overallProgressText">0%</span>
+                </div>
+            </div>
+
+            <table class="progress-table" id="progressTable">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Lifelog</th>
+                        <th>Audio</th>
+                        <th>Diarize</th>
+                    </tr>
+                </thead>
+                <tbody id="progressTableBody">
+                </tbody>
+            </table>
+
+            <div id="errorMessage" class="error-message" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        let jobId = null;
+        let pollInterval = null;
+
+        // Form submission
+        document.getElementById('setupForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const apiKey = document.getElementById('apiKey').value;
+            const timezone = document.getElementById('timezone').value;
+            const startTime = document.getElementById('startTime').value;
+            const endTime = document.getElementById('endTime').value;
+            const reprocess = document.getElementById('reprocess').checked;
+
+            if (!startTime || !endTime) {
+                alert('Please select both start and end times');
+                return;
+            }
+
+            const start = new Date(startTime);
+            const end = new Date(endTime);
+
+            if (start >= end) {
+                alert('End time must be after start time');
+                return;
+            }
+
+            // Hide form, show status
+            document.getElementById('onboarding').style.display = 'none';
+            document.getElementById('status').classList.add('active');
+
+            // Initialize progress table (will be populated from server response)
+            document.getElementById('progressTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">Initializing...</td></tr>';
+
+            try {
+                const response = await fetch('/api/submit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        apiKey: apiKey,
+                        startTime: start.toISOString(),
+                        endTime: end.toISOString(),
+                        timezone: timezone,
+                        reprocess: reprocess,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+
+                const data = await response.json();
+                jobId = data.jobId;
+
+                // Show cancel button
+                document.getElementById('cancelBtn').style.display = 'block';
+
+                // Start polling
+                pollStatus();
+            } catch (error) {
+                showError(error.message);
+            }
+        });
+
+        function initializeProgressTable(hourProgress) {
+            const tbody = document.getElementById('progressTableBody');
+            const hours = Object.keys(hourProgress || {}).sort();
+            
+            if (hours.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">No hours to process</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = hours.map(hour => `
+                <tr data-hour="${hour}">
+                    <td>${formatHour(hour)}</td>
+                    <td class="stage-cell" data-stage="lifelog">
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 0%"></div>
+                            </div>
+                            <span class="checkmark" style="display: none;">✓</span>
+                        </div>
+                    </td>
+                    <td class="stage-cell" data-stage="audio">
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 0%"></div>
+                            </div>
+                            <span class="checkmark" style="display: none;">✓</span>
+                        </div>
+                    </td>
+                    <td class="stage-cell" data-stage="diarize">
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 0%"></div>
+                            </div>
+                            <span class="checkmark" style="display: none;">✓</span>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function formatHour(hourStr) {
+            // Format "2025-11-22 15:04" to "2025-11-22 15:00"
+            const [date, time] = hourStr.split(' ');
+            const [hour] = time.split(':');
+            return `${date} ${hour}:00`;
+        }
+
+        async function pollStatus() {
+            if (!jobId) return;
+
+            try {
+                const response = await fetch(`/api/status?jobId=${jobId}`);
+                if (!response.ok) {
+                    throw new Error('Failed to get status');
+                }
+
+                const job = await response.json();
+                updateProgress(job);
+
+                // Continue polling if not completed, failed, or cancelled
+                if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+                    if (pollInterval) {
+                        clearInterval(pollInterval);
+                    }
+                    // Hide cancel button
+                    document.getElementById('cancelBtn').style.display = 'none';
+                    if (job.status === 'failed') {
+                        showError(job.error || 'Processing failed');
+                    } else if (job.status === 'cancelled') {
+                        showError('Processing was cancelled');
+                    }
+                } else {
+                    // Poll again in 1 second
+                    if (!pollInterval) {
+                        pollInterval = setInterval(pollStatus, 1000);
+                    }
+                }
+            } catch (error) {
+                showError(error.message);
+                if (pollInterval) {
+                    clearInterval(pollInterval);
+                }
+            }
+        }
+
+        function updateProgress(job) {
+            // Update overall progress
+            document.getElementById('overallProgressFill').style.width = job.progress + '%';
+            document.getElementById('overallProgressText').textContent = job.progress + '%';
+
+            // Initialize table if needed
+            if (job.hour_progress && Object.keys(job.hour_progress).length > 0) {
+                const tbody = document.getElementById('progressTableBody');
+                if (tbody.children.length === 0 || tbody.children[0].textContent.includes('Initializing')) {
+                    initializeProgressTable(job.hour_progress);
+                }
+            }
+
+            // Update per-hour progress
+            for (const [hour, progress] of Object.entries(job.hour_progress || {})) {
+                updateHourProgress(hour, progress);
+            }
+        }
+
+        function updateHourProgress(hour, progress) {
+            const row = document.querySelector(`tr[data-hour="${hour}"]`);
+            if (!row) {
+                // Row doesn't exist yet, initialize table
+                initializeProgressTable({[hour]: progress});
+                return;
+            }
+
+            // Update each stage
+            ['lifelog', 'audio', 'diarize'].forEach(stage => {
+                const cell = row.querySelector(`td[data-stage="${stage}"]`);
+                if (!cell) return;
+
+                const progressFill = cell.querySelector('.progress-fill');
+                const checkmark = cell.querySelector('.checkmark');
+                const status = progress[stage];
+                const stageProgress = progress[`${stage}_progress`] || 0;
+
+                if (status === 'done') {
+                    progressFill.style.width = '100%';
+                    progressFill.classList.add('done');
+                    checkmark.style.display = 'inline';
+                } else if (status === 'running') {
+                    progressFill.style.width = stageProgress + '%';
+                    progressFill.classList.remove('done');
+                    checkmark.style.display = 'none';
+                } else if (status === 'failed') {
+                    progressFill.style.width = '100%';
+                    progressFill.style.background = '#e74c3c';
+                    checkmark.style.display = 'none';
+                    // Only show error message if it exists and hasn't been shown already
+                    if (progress.error && progress.error.trim() !== '') {
+                        // Check if error div already exists
+                        let errorDiv = cell.querySelector('.error');
+                        if (!errorDiv) {
+                            errorDiv = document.createElement('div');
+                            errorDiv.className = 'error';
+                            cell.appendChild(errorDiv);
+                        }
+                        errorDiv.textContent = progress.error;
+                    }
+                } else {
+                    progressFill.style.width = '0%';
+                    progressFill.classList.remove('done');
+                    checkmark.style.display = 'none';
+                }
+            });
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        async function cancelJob() {
+            if (!jobId) return;
+
+            if (!confirm('Are you sure you want to cancel processing? This will stop all current operations.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/cancel?jobId=${jobId}`, {
+                    method: 'POST',
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to cancel job');
+                }
+
+                // Stop polling
+                if (pollInterval) {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                }
+
+                // Hide cancel button
+                document.getElementById('cancelBtn').style.display = 'none';
+
+                // Update status
+                showError('Processing cancelled');
+            } catch (error) {
+                showError('Failed to cancel: ' + error.message);
+            }
+        }
+
+        // Set default time range (Nov 22, 2025, 2pm-6pm)
+        const startTime = new Date(2025, 10, 22, 14, 0, 0); // Nov 22, 2025, 2pm (month is 0-indexed)
+        const endTime = new Date(2025, 10, 22, 18, 0, 0); // Nov 22, 2025, 6pm
+        
+        // Format for datetime-local input (YYYY-MM-DDTHH:mm)
+        const formatDateTimeLocal = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        };
+        
+        document.getElementById('startTime').value = formatDateTimeLocal(startTime);
+        document.getElementById('endTime').value = formatDateTimeLocal(endTime);
+    </script>
+</body>
+</html>
