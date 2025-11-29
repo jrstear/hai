@@ -1,0 +1,55 @@
+# Environment variables and secrets
+.env
+.env.local
+*.key
+*.pem
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Beads database (local state, not committed)
+.beads/*.db
+.beads/*.db-shm
+.beads/*.db-wal
+.beads/bd.sock
+
+# Beads issues ARE committed (issues.jsonl)
+# But database files are local only
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Audio files (large binaries - decide if you want these in git)
+# Uncomment if you don't want to track audio files:
+# data/audio/
+# *.ogg
+# *.mp3
+# *.wav
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+/temp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
