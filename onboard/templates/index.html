@@ -184,10 +184,28 @@
             background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
             transition: width 0.3s;
             width: 0%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-fill.running {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            background-size: 200% 100%;
+            animation: progressWave 2s linear infinite;
+        }
+
+        @keyframes progressWave {
+            0% {
+                background-position: -200% 0%;
+            }
+            100% {
+                background-position: 0% 0%;
+            }
         }
 
         .progress-fill.done {
             background: #27ae60;
+            animation: none;
         }
 
         .checkmark {
@@ -226,8 +244,8 @@
 </head>
 <body>
     <div class="container">
-        <h1>Welcome to Hai Audio Lifelog</h1>
-        <p class="subtitle">Set up your audio lifelog processing system</p>
+        <h1>Hai!</h1>
+        <p class="subtitle">Enter API key and date range, to download lifelog, and download and diarize audio (in 1-hour chunks).</p>
 
         <div id="onboarding">
             <form id="setupForm">
@@ -249,12 +267,14 @@
 
                 <div class="form-group">
                     <label for="startTime">Start Date & Time</label>
-                    <input type="datetime-local" id="startTime" name="startTime" required>
+                    <input type="datetime-local" id="startTime" name="startTime" required step="3600">
+                    <small style="color: #666; font-size: 12px; display: block; margin-top: 4px;">Only full hours are allowed (:00)</small>
                 </div>
 
                 <div class="form-group">
-                    <label for="endTime">End Date & Time</label>
-                    <input type="datetime-local" id="endTime" name="endTime" required>
+                    <label for="endTime">End at Date & Time (non-inclusive)</label>
+                    <input type="datetime-local" id="endTime" name="endTime" required step="3600">
+                    <small style="color: #666; font-size: 12px; display: block; margin-top: 4px;">Only full hours are allowed (:00)</small>
                 </div>
 
                 <div class="form-group">
@@ -270,7 +290,10 @@
 
         <div id="status" class="status">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h3 style="margin: 0;">Processing Status</h3>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <h3 style="margin: 0;">Processing Status</h3>
+                    <button id="getMoreBtn" style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;" onclick="resetToInitialState()">Get More!</button>
+                </div>
                 <button id="cancelBtn" style="display: none; padding: 8px 16px; background: #e74c3c; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;" onclick="cancelJob()">Cancel Processing</button>
             </div>
             <div class="overall-progress">
@@ -287,9 +310,9 @@
                 <thead>
                     <tr>
                         <th>Time</th>
-                        <th>Lifelog</th>
-                        <th>Audio</th>
-                        <th>Diarize</th>
+                        <th>Download Lifelog</th>
+                        <th>Download Audio</th>
+                        <th>Diarize Audio</th>
                     </tr>
                 </thead>
                 <tbody id="progressTableBody">
@@ -310,22 +333,42 @@
 
             const apiKey = document.getElementById('apiKey').value;
             const timezone = document.getElementById('timezone').value;
-            const startTime = document.getElementById('startTime').value;
-            const endTime = document.getElementById('endTime').value;
+            const startTimeInput = document.getElementById('startTime');
+            const endTimeInput = document.getElementById('endTime');
             const reprocess = document.getElementById('reprocess').checked;
 
-            if (!startTime || !endTime) {
+            if (!startTimeInput.value || !endTimeInput.value) {
                 alert('Please select both start and end times');
                 return;
             }
 
-            const start = new Date(startTime);
-            const end = new Date(endTime);
+            // datetime-local input gives us a string like "2025-11-22T14:00" in local time
+            // Convert to Date object (interprets as local time), then to ISO string
+            const start = new Date(startTimeInput.value);
+            const end = new Date(endTimeInput.value);
 
             if (start >= end) {
-                alert('End time must be after start time');
+                alert('End time must be after start time (non-inclusive)');
                 return;
             }
+            
+            // Validate that minutes are :00 (only full hours allowed)
+            const startMinutes = start.getMinutes();
+            const endMinutes = end.getMinutes();
+            if (startMinutes !== 0) {
+                alert('Start time must be on the hour (:00). Only full hours are allowed.');
+                startTimeInput.focus();
+                return;
+            }
+            if (endMinutes !== 0) {
+                alert('End time must be on the hour (:00). Only full hours are allowed.');
+                endTimeInput.focus();
+                return;
+            }
+            
+            // Convert to ISO strings (includes timezone offset)
+            const startISO = start.toISOString();
+            const endISO = end.toISOString();
 
             // Hide form, show status
             document.getElementById('onboarding').style.display = 'none';
@@ -342,8 +385,8 @@
                     },
                     body: JSON.stringify({
                         apiKey: apiKey,
-                        startTime: start.toISOString(),
-                        endTime: end.toISOString(),
+                        startTime: startISO,
+                        endTime: endISO,
                         timezone: timezone,
                         reprocess: reprocess,
                     }),
@@ -357,8 +400,9 @@
                 const data = await response.json();
                 jobId = data.jobId;
 
-                // Show cancel button
+                // Show cancel button, hide Get More button
                 document.getElementById('cancelBtn').style.display = 'block';
+                document.getElementById('getMoreBtn').style.display = 'none';
 
                 // Start polling
                 pollStatus();
@@ -376,9 +420,12 @@
                 return;
             }
             
-            tbody.innerHTML = hours.map(hour => `
+            tbody.innerHTML = hours.map(hour => {
+                const progress = hourProgress[hour];
+                const displayHour = (progress && progress.display_hour) ? progress.display_hour : formatHour(hour);
+                return `
                 <tr data-hour="${hour}">
-                    <td>${formatHour(hour)}</td>
+                    <td>${displayHour}</td>
                     <td class="stage-cell" data-stage="lifelog">
                         <div class="progress-container">
                             <div class="progress-bar">
@@ -404,7 +451,8 @@
                         </div>
                     </td>
                 </tr>
-            `).join('');
+            `;
+            }).join('');
         }
 
         function formatHour(hourStr) {
@@ -431,8 +479,9 @@
                     if (pollInterval) {
                         clearInterval(pollInterval);
                     }
-                    // Hide cancel button
+                    // Hide cancel button, show Get More button
                     document.getElementById('cancelBtn').style.display = 'none';
+                    document.getElementById('getMoreBtn').style.display = 'block';
                     if (job.status === 'failed') {
                         showError(job.error || 'Processing failed');
                     } else if (job.status === 'cancelled') {
@@ -454,8 +503,23 @@
 
         function updateProgress(job) {
             // Update overall progress
-            document.getElementById('overallProgressFill').style.width = job.progress + '%';
+            const overallFill = document.getElementById('overallProgressFill');
+            overallFill.style.width = job.progress + '%';
             document.getElementById('overallProgressText').textContent = job.progress + '%';
+            
+            // Add animation if processing, mark as done if completed
+            if (job.status === 'completed') {
+                overallFill.classList.add('done');
+                overallFill.classList.remove('running');
+            } else if (job.status === 'processing' && job.progress > 0 && job.progress < 100) {
+                overallFill.classList.add('running');
+                overallFill.classList.remove('done');
+            } else {
+                overallFill.classList.remove('running');
+                if (job.progress === 100) {
+                    overallFill.classList.add('done');
+                }
+            }
 
             // Initialize table if needed
             if (job.hour_progress && Object.keys(job.hour_progress).length > 0) {
@@ -492,12 +556,15 @@
                 if (status === 'done') {
                     progressFill.style.width = '100%';
                     progressFill.classList.add('done');
+                    progressFill.classList.remove('running');
                     checkmark.style.display = 'inline';
                 } else if (status === 'running') {
                     progressFill.style.width = stageProgress + '%';
                     progressFill.classList.remove('done');
+                    progressFill.classList.add('running');
                     checkmark.style.display = 'none';
                 } else if (status === 'failed') {
+                    progressFill.classList.remove('running');
                     progressFill.style.width = '100%';
                     progressFill.style.background = '#e74c3c';
                     checkmark.style.display = 'none';
@@ -515,6 +582,7 @@
                 } else {
                     progressFill.style.width = '0%';
                     progressFill.classList.remove('done');
+                    progressFill.classList.remove('running');
                     checkmark.style.display = 'none';
                 }
             });
@@ -523,7 +591,7 @@
         function showError(message) {
             const errorDiv = document.getElementById('errorMessage');
             errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
+            errorDiv.style.display = message ? 'block' : 'none';
         }
 
         async function cancelJob() {
@@ -548,8 +616,9 @@
                     pollInterval = null;
                 }
 
-                // Hide cancel button
+                // Hide cancel button, show Get More button
                 document.getElementById('cancelBtn').style.display = 'none';
+                document.getElementById('getMoreBtn').style.display = 'block';
 
                 // Update status
                 showError('Processing cancelled');
@@ -558,11 +627,67 @@
             }
         }
 
-        // Set default time range (Nov 22, 2025, 2pm-6pm)
-        const startTime = new Date(2025, 10, 22, 14, 0, 0); // Nov 22, 2025, 2pm (month is 0-indexed)
-        const endTime = new Date(2025, 10, 22, 18, 0, 0); // Nov 22, 2025, 6pm
+        function resetToInitialState() {
+            // Stop any polling
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+
+            // Clear job ID
+            jobId = null;
+
+            // Save the API key value
+            const savedApiKey = document.getElementById('apiKey').value;
+
+            // Hide status section, show onboarding form
+            document.getElementById('status').classList.remove('active');
+            document.getElementById('onboarding').style.display = 'block';
+
+            // Reset form fields (except API key)
+            document.getElementById('apiKey').value = savedApiKey; // Restore API key
+            document.getElementById('timezone').value = 'America/Denver'; // Reset to default
+            document.getElementById('reprocess').checked = false; // Uncheck reprocess
+
+            // Reset date/time inputs to defaults
+            const startTime = new Date(2025, 10, 22, 14, 0, 0);
+            const endTime = new Date(2025, 10, 22, 18, 0, 0);
+            const formatDateTimeLocal = (date) => {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}-${month}-${day}T${hours}:${minutes}`;
+            };
+            document.getElementById('startTime').value = formatDateTimeLocal(startTime);
+            document.getElementById('endTime').value = formatDateTimeLocal(endTime);
+
+            // Reset progress table
+            document.getElementById('progressTableBody').innerHTML = '';
+
+            // Reset overall progress
+            const overallFill = document.getElementById('overallProgressFill');
+            overallFill.style.width = '0%';
+            overallFill.classList.remove('running', 'done');
+            document.getElementById('overallProgressText').textContent = '0%';
+
+            // Hide cancel button, show Get More button
+            document.getElementById('cancelBtn').style.display = 'none';
+            document.getElementById('getMoreBtn').style.display = 'block';
+
+            // Clear error messages
+            showError('');
+        }
+
+        // Set default time range (Nov 22, 2025, 2pm-6pm in local timezone)
+        // datetime-local inputs work in the browser's local timezone
+        // Create dates in local timezone (not UTC)
+        const startTime = new Date(2025, 10, 22, 14, 0, 0); // Nov 22, 2025, 2pm local time (month is 0-indexed)
+        const endTime = new Date(2025, 10, 22, 18, 0, 0); // Nov 22, 2025, 6pm local time
         
         // Format for datetime-local input (YYYY-MM-DDTHH:mm)
+        // Note: datetime-local doesn't include timezone, it uses browser's local timezone
         const formatDateTimeLocal = (date) => {
             const year = date.getFullYear();
             const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -574,6 +699,31 @@
         
         document.getElementById('startTime').value = formatDateTimeLocal(startTime);
         document.getElementById('endTime').value = formatDateTimeLocal(endTime);
+        
+        // Add event listeners to validate minutes are always :00
+        function validateMinutes(input) {
+            input.addEventListener('change', function() {
+                const date = new Date(this.value);
+                if (date.getMinutes() !== 0) {
+                    alert('Only full hours are allowed (:00). Minutes will be reset to :00.');
+                    // Reset to :00
+                    date.setMinutes(0);
+                    this.value = formatDateTimeLocal(date);
+                }
+            });
+            
+            // Also validate on blur in case user manually types
+            input.addEventListener('blur', function() {
+                const date = new Date(this.value);
+                if (date.getMinutes() !== 0) {
+                    date.setMinutes(0);
+                    this.value = formatDateTimeLocal(date);
+                }
+            });
+        }
+        
+        validateMinutes(document.getElementById('startTime'));
+        validateMinutes(document.getElementById('endTime'));
     </script>
 </body>
 </html>

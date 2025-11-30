@@ -16,12 +16,15 @@ const (
 // FetchAudio downloads audio from Limitless API for the given time range
 // Returns the file path and a boolean indicating if the file already existed
 func FetchAudio(apiKey string, startTime, endTime time.Time, outputDir string, reprocess bool) (string, bool, error) {
-	// Create output directory structure: YYYY/MM/DD/HH.ogg
+	// Ensure times are in UTC for directory structure consistency
+	startUTC := startTime.UTC()
+
+	// Create output directory structure: YYYY/MM/DD/HH.ogg (in UTC)
 	relPath := filepath.Join(
-		startTime.Format("2006"),
-		startTime.Format("01"),
-		startTime.Format("02"),
-		fmt.Sprintf("%s.ogg", startTime.Format("15")),
+		startUTC.Format("2006"),
+		startUTC.Format("01"),
+		startUTC.Format("02"),
+		fmt.Sprintf("%s.ogg", startUTC.Format("15")),
 	)
 	fullPath := filepath.Join(outputDir, relPath)
 
@@ -32,10 +35,22 @@ func FetchAudio(apiKey string, startTime, endTime time.Time, outputDir string, r
 			if err := os.Remove(fullPath); err != nil {
 				return "", false, fmt.Errorf("failed to remove existing file: %w", err)
 			}
+			fmt.Printf("Removed existing audio file (reprocess=true): %s\n", fullPath)
 		} else {
+			// Use relative path for cleaner output
+			fmt.Printf("data/%s already exists - skipping download.\n", relPath)
 			return fullPath, true, nil // File already exists, skip download
 		}
 	}
+
+	// Starting download - print relative path for cleaner output (in UTC)
+	audioRelPath := filepath.Join(
+		startUTC.Format("2006"),
+		startUTC.Format("01"),
+		startUTC.Format("02"),
+		fmt.Sprintf("%s.ogg", startUTC.Format("15")),
+	)
+	fmt.Printf("Downloading audio %s\n", audioRelPath)
 
 	// Create directory if needed
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
@@ -114,4 +129,3 @@ func FetchAudioRange(apiKey string, startTime, endTime time.Time, outputDir stri
 
 	return files, nil
 }
-

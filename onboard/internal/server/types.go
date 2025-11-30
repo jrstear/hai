@@ -28,8 +28,9 @@ const (
 
 // HourProgress represents progress for a single hour
 type HourProgress struct {
-	Hour      string      `json:"hour"`       // YYYY-MM-DD HH:00 format
-	Date      string      `json:"date"`       // YYYY-MM-DD (for grouping)
+	Hour      string      `json:"hour"`       // YYYY-MM-DD HH:00 format (UTC, for internal tracking)
+	DisplayHour string    `json:"display_hour"` // YYYY-MM-DD HH:00 format (user's timezone, for UI display)
+	Date      string      `json:"date"`       // YYYY-MM-DD (for grouping, UTC)
 	Lifelog   StageStatus `json:"lifelog"`    // Status: pending, running, done, failed (per-date)
 	LifelogProgress int   `json:"lifelog_progress"` // 0-100
 	Audio     StageStatus `json:"audio"`      // Status: pending, running, done, failed

@@ -11,24 +11,24 @@ import (
 
 // Result represents diarization results
 type Result struct {
-	AudioFile        string             `json:"audio_file"`
-	Timestamp        string             `json:"timestamp"`
-	AudioDuration    float64            `json:"audio_duration"`
-	ProcessingTime   float64            `json:"processing_time"`
-	RTF              float64            `json:"rtf"`
-	Device           string             `json:"device"`
-	SpeakerCount     int                `json:"speaker_count"`
-	Speakers         []string           `json:"speakers"`
-	SegmentCount     int                `json:"segment_count"`
-	Segments         []Segment          `json:"segments"`
+	AudioFile         string               `json:"audio_file"`
+	Timestamp         string               `json:"timestamp"`
+	AudioDuration     float64              `json:"audio_duration"`
+	ProcessingTime    float64              `json:"processing_time"`
+	RTF               float64              `json:"rtf"`
+	Device            string               `json:"device"`
+	SpeakerCount      int                  `json:"speaker_count"`
+	Speakers          []string             `json:"speakers"`
+	SegmentCount      int                  `json:"segment_count"`
+	Segments          []Segment            `json:"segments"`
 	SpeakerEmbeddings map[string][]float64 `json:"speaker_embeddings"`
 }
 
 // Segment represents a single speaker segment
 type Segment struct {
-	Speaker string  `json:"speaker"`
-	Start   float64 `json:"start"`
-	End     float64 `json:"end"`
+	Speaker  string  `json:"speaker"`
+	Start    float64 `json:"start"`
+	End      float64 `json:"end"`
 	Duration float64 `json:"duration"`
 }
 
@@ -43,26 +43,43 @@ func RunDiarization(audioFile string, hfToken string, reprocess bool, progressCa
 			if err := os.Remove(resultPath); err != nil {
 				return nil, false, fmt.Errorf("failed to remove existing result file: %w", err)
 			}
+			fmt.Printf("Removed existing diarization result (reprocess=true): %s\n", resultPath)
 		} else {
 			// Result file exists, load it
+			// Extract relative path for cleaner output (data/YYYY/MM/DD/HH.json)
+			relPath := extractRelativePath(resultPath)
+			fmt.Printf("data/%s already exists - skipping diarization.\n", relPath)
 			if progressCallback != nil {
 				progressCallback("Using cached diarization results")
 			}
-			
+
 			data, err := os.ReadFile(resultPath)
 			if err != nil {
 				return nil, false, fmt.Errorf("failed to read cached result: %w", err)
 			}
-			
+
 			var result Result
 			if err := json.Unmarshal(data, &result); err != nil {
 				return nil, false, fmt.Errorf("failed to parse cached result: %w", err)
 			}
-			
+
+			// Don't print extra messages when skipping - the "already exists" message above is sufficient
 			return &result, true, nil
 		}
 	}
-	
+
+	// Starting diarization
+	relPath := audioFile
+	if absPath, err := filepath.Abs(audioFile); err == nil {
+		// Try to make path relative for cleaner output
+		if cwd, err := os.Getwd(); err == nil {
+			if rel, err := filepath.Rel(cwd, absPath); err == nil {
+				relPath = rel
+			}
+		}
+	}
+	fmt.Printf("Diarizing %s\n", relPath)
+
 	// Find the diarization script (relative to project root)
 	// Try multiple possible paths
 	possiblePaths := []string{
@@ -70,7 +87,7 @@ func RunDiarization(audioFile string, hfToken string, reprocess bool, progressCa
 		filepath.Join("cmd", "diarize", "diarize.py"),
 		"../cmd/diarize/diarize.py",
 	}
-	
+
 	var scriptPath string
 	for _, path := range possiblePaths {
 		if _, err := os.Stat(path); err == nil {
@@ -78,7 +95,7 @@ func RunDiarization(audioFile string, hfToken string, reprocess bool, progressCa
 			break
 		}
 	}
-	
+
 	if scriptPath == "" {
 		return nil, false, fmt.Errorf("diarization script not found. Tried: %v", possiblePaths)
 	}
@@ -129,7 +146,7 @@ func RunDiarization(audioFile string, hfToken string, reprocess bool, progressCa
 			}
 		}
 	}
-	
+
 	// Read the JSON result
 	data, err := os.ReadFile(resultPath)
 	if err != nil {
@@ -145,3 +162,32 @@ func RunDiarization(audioFile string, hfToken string, reprocess bool, progressCa
 	return &result, false, nil
 }
 
+// extractRelativePath extracts the relative path (YYYY/MM/DD/HH.json) from a full path
+func extractRelativePath(fullPath string) string {
+	// Normalize path separators
+	normalized := filepath.ToSlash(fullPath)
+	parts := strings.Split(normalized, "/")
+
+	// Look for "data" directory and extract everything after it
+	for i, part := range parts {
+		if part == "data" && i+4 < len(parts) {
+			// Found data directory, extract YYYY/MM/DD/filename
+			return strings.Join(parts[i+1:], "/")
+		}
+	}
+
+	// Fallback: try to extract YYYY/MM/DD/HH.json pattern directly
+	// Look for year (4 digits starting with 2)
+	for i := 0; i < len(parts)-1; i++ {
+		part := parts[i]
+		if len(part) == 4 && part[0] == '2' {
+			// Check if we have enough parts: YYYY/MM/DD/filename
+			if i+3 < len(parts) {
+				return strings.Join(parts[i:], "/")
+			}
+		}
+	}
+
+	// If we can't extract, return just the filename
+	return filepath.Base(fullPath)
+}

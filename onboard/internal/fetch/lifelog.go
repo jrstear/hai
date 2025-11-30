@@ -48,33 +48,61 @@ type LifelogResponse struct {
 
 // FetchLifelogs fetches lifelogs for a specific date
 // Returns the file path and a boolean indicating if the file already existed
+// date should be in UTC for directory structure consistency
+// timezone is used for the API call to determine which date to fetch in that timezone
 func FetchLifelogs(apiKey string, date time.Time, timezone string, outputDir string, reprocess bool) (string, bool, error) {
-	dateStr := date.Format("2006-01-02")
-	
-	// Create directory structure: YYYY/MM/DD/lifelogs.json
+	// Ensure date is in UTC for directory structure
+	dateUTC := date.UTC()
+
+	// Load timezone for API call
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		return "", false, fmt.Errorf("invalid timezone: %w", err)
+	}
+
+	// Convert UTC date to user's timezone to get the date string for API call
+	// The API expects the date in the specified timezone
+	dateInTZ := dateUTC.In(loc)
+	dateStr := dateInTZ.Format("2006-01-02")
+
+	// Create directory structure: YYYY/MM/DD/lifelog.json (in UTC)
 	relPath := filepath.Join(
-		date.Format("2006"),
-		date.Format("01"),
-		date.Format("02"),
-		"lifelogs.json",
+		dateUTC.Format("2006"),
+		dateUTC.Format("01"),
+		dateUTC.Format("02"),
+		"lifelog.json",
 	)
 	outputPath := filepath.Join(outputDir, relPath)
-	
+
 	// Create directory if needed
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
 		return "", false, fmt.Errorf("failed to create directory: %w", err)
 	}
+
+	// Check if file already exists
 	if _, err := os.Stat(outputPath); err == nil {
 		if reprocess {
 			// Remove existing file to force re-fetch
 			if err := os.Remove(outputPath); err != nil {
 				return "", false, fmt.Errorf("failed to remove existing file: %w", err)
 			}
+			fmt.Printf("Removed existing lifelog file (reprocess=true): %s\n", outputPath)
 		} else {
+			// Use relative path for cleaner output
+			relPathForMsg := filepath.Join(
+				dateUTC.Format("2006"),
+				dateUTC.Format("01"),
+				dateUTC.Format("02"),
+				"lifelog.json",
+			)
+			fmt.Printf("data/%s already exists - skipping download.\n", relPathForMsg)
 			return outputPath, true, nil // File already exists, skip fetch
 		}
 	}
-	
+
+	// Starting download
+	fmt.Printf("Downloading lifelog.json\n")
+
 	var allLifelogs []Lifelog
 	var cursor *string
 
@@ -139,4 +167,3 @@ func FetchLifelogs(apiKey string, date time.Time, timezone string, outputDir str
 
 	return outputPath, false, nil
 }
-
