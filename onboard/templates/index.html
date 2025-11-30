@@ -170,48 +170,103 @@
             gap: 8px;
         }
 
-        .progress-bar {
-            flex: 1;
+        /* Status icons */
+        .status-icon {
+            display: inline-block;
+            width: 20px;
             height: 20px;
-            background: #e0e0e0;
-            border-radius: 10px;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            transition: width 0.3s;
-            width: 0%;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .progress-fill.running {
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            background-size: 200% 100%;
-            animation: progressWave 2s linear infinite;
-        }
-
-        @keyframes progressWave {
-            0% {
-                background-position: -200% 0%;
-            }
-            100% {
-                background-position: 0% 0%;
-            }
-        }
-
-        .progress-fill.done {
-            background: #27ae60;
-            animation: none;
-        }
-
-        .checkmark {
-            color: #27ae60;
-            font-size: 18px;
+            text-align: center;
+            line-height: 20px;
+            font-size: 16px;
             font-weight: bold;
+        }
+
+        .status-icon.checkmark {
+            color: #27ae60;
+        }
+
+        .status-icon.checkmark-skipped {
+            color: #1e8449; /* Darker green for skipped */
+        }
+
+        .status-icon.failed {
+            color: #e74c3c;
+        }
+
+        /* Spinner */
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #e0e0e0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Date group styling */
+        .date-group {
+            margin-bottom: 20px;
+        }
+
+        .date-header {
+            font-weight: 600;
+            color: #333;
+            padding: 10px 0;
+            border-bottom: 2px solid #e0e0e0;
+            margin-bottom: 8px;
+        }
+
+        .lifelog-row {
+            padding: 8px 0;
+            margin-bottom: 4px;
+        }
+
+        .lifelog-row .label {
+            display: inline-block;
+            width: 150px;
+            font-weight: 500;
+            color: #666;
+        }
+
+        .hours-section {
+            margin-left: 20px;
+        }
+
+        .hour-row {
+            padding: 6px 0;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .hour-row.hour-header {
+            padding: 8px 0 4px 0;
+            border-bottom: 1px solid #e0e0e0;
+            margin-bottom: 4px;
+        }
+
+        .hour-time {
+            display: inline-block;
+            width: 80px;
+            font-weight: 500;
+            color: #333;
+        }
+
+        .stage-status {
+            display: inline-block;
+            width: 150px;
+            min-height: 20px;
+        }
+
+        .stage-status .error {
+            margin-top: 4px;
+            font-size: 11px;
+            color: #e74c3c;
         }
 
         .error {
@@ -306,19 +361,9 @@
                 </div>
             </div>
 
-            <table class="progress-table" id="progressTable">
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>Download Lifelog</th>
-                        <th>Download Audio</th>
-                        <th>Diarize Audio</th>
-                        <th>Load Elasticsearch</th>
-                    </tr>
-                </thead>
-                <tbody id="progressTableBody">
-                </tbody>
-            </table>
+            <div id="progressContainer">
+                <!-- Date groups will be inserted here -->
+            </div>
 
             <div id="errorMessage" class="error-message" style="display: none;"></div>
         </div>
@@ -375,8 +420,8 @@
             document.getElementById('onboarding').style.display = 'none';
             document.getElementById('status').classList.add('active');
 
-            // Initialize progress table (will be populated from server response)
-            document.getElementById('progressTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">Initializing...</td></tr>';
+            // Initialize progress container (will be populated from server response)
+            document.getElementById('progressContainer').innerHTML = '<div style="text-align: center; padding: 20px;">Initializing...</div>';
 
             try {
                 const response = await fetch('/api/submit', {
@@ -413,55 +458,89 @@
         });
 
         function initializeProgressTable(hourProgress) {
-            const tbody = document.getElementById('progressTableBody');
+            const container = document.getElementById('progressContainer');
             const hours = Object.keys(hourProgress || {}).sort();
             
             if (hours.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">No hours to process</td></tr>';
+                container.innerHTML = '<div style="text-align: center; padding: 20px;">No hours to process</div>';
                 return;
             }
             
-            tbody.innerHTML = hours.map(hour => {
+            // Group hours by date (in user's timezone)
+            const dateGroups = {};
+            for (const hour of hours) {
                 const progress = hourProgress[hour];
                 const displayHour = (progress && progress.display_hour) ? progress.display_hour : formatHour(hour);
+                const [date] = displayHour.split(' ');
+                
+                if (!dateGroups[date]) {
+                    dateGroups[date] = [];
+                }
+                dateGroups[date].push({ hour, progress, displayHour });
+            }
+            
+            // Sort dates
+            const sortedDates = Object.keys(dateGroups).sort();
+            
+            // Render date groups
+            container.innerHTML = sortedDates.map(date => {
+                const hoursInDate = dateGroups[date];
+                // Get lifelog status from first hour (all hours in same date share lifelog status)
+                const lifelogStatus = hoursInDate[0].progress.lifelog || 'pending';
+                
                 return `
-                <tr data-hour="${hour}">
-                    <td>${displayHour}</td>
-                    <td class="stage-cell" data-stage="lifelog">
-                        <div class="progress-container">
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: 0%"></div>
-                            </div>
-                            <span class="checkmark" style="display: none;">✓</span>
+                    <div class="date-group" data-date="${date}">
+                        <div class="date-header">Date: ${date}</div>
+                        <div class="lifelog-row">
+                            <span class="label">Lifelog:</span>
+                            <span style="margin-right: 8px;">Download</span>
+                            <span class="stage-status" data-date="${date}" data-stage="lifelog">
+                                ${renderStatusIcon(lifelogStatus)}
+                            </span>
                         </div>
-                    </td>
-                    <td class="stage-cell" data-stage="audio">
-                        <div class="progress-container">
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: 0%"></div>
+                        <div class="hours-section">
+                            <div class="hour-row hour-header">
+                                <span class="hour-time"></span>
+                                <span class="stage-status" style="font-weight: 500; color: #666;">Download Audio</span>
+                                <span class="stage-status" style="font-weight: 500; color: #666;">Diarize Audio</span>
+                                <span class="stage-status" style="font-weight: 500; color: #666;">Load Elasticsearch</span>
                             </div>
-                            <span class="checkmark" style="display: none;">✓</span>
+                            ${hoursInDate.map(({ hour, displayHour }) => {
+                                const [_, time] = displayHour.split(' ');
+                                const hourOnly = time.split(':')[0] + ':00';
+                                return `
+                                    <div class="hour-row" data-hour="${hour}">
+                                        <span class="hour-time">${hourOnly}</span>
+                                        <span class="stage-status" data-hour="${hour}" data-stage="audio">
+                                            ${renderStatusIcon(hourProgress[hour].audio || 'pending')}
+                                        </span>
+                                        <span class="stage-status" data-hour="${hour}" data-stage="diarize">
+                                            ${renderStatusIcon(hourProgress[hour].diarize || 'pending')}
+                                        </span>
+                                        <span class="stage-status" data-hour="${hour}" data-stage="elasticsearch">
+                                            ${renderStatusIcon(hourProgress[hour].elasticsearch || 'pending')}
+                                        </span>
+                                    </div>
+                                `;
+                            }).join('')}
                         </div>
-                    </td>
-                    <td class="stage-cell" data-stage="diarize">
-                        <div class="progress-container">
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: 0%"></div>
-                            </div>
-                            <span class="checkmark" style="display: none;">✓</span>
-                        </div>
-                    </td>
-                    <td class="stage-cell" data-stage="elasticsearch">
-                        <div class="progress-container">
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: 0%"></div>
-                            </div>
-                            <span class="checkmark" style="display: none;">✓</span>
-                        </div>
-                    </td>
-                </tr>
-            `;
+                    </div>
+                `;
             }).join('');
+        }
+
+        function renderStatusIcon(status) {
+            if (status === 'done') {
+                return '<span class="status-icon checkmark">✓</span>';
+            } else if (status === 'running') {
+                return '<span class="spinner"></span>';
+            } else if (status === 'failed') {
+                return '<span class="status-icon failed">✗</span>';
+            } else if (status === 'skipped') {
+                return '<span class="status-icon checkmark-skipped">✓</span>';
+            } else {
+                return '<span class="status-icon"></span>'; // pending - blank
+            }
         }
 
         function formatHour(hourStr) {
@@ -513,8 +592,19 @@
         function updateProgress(job) {
             // Update overall progress
             const overallFill = document.getElementById('overallProgressFill');
+            const overallText = document.getElementById('overallProgressText');
             overallFill.style.width = job.progress + '%';
-            document.getElementById('overallProgressText').textContent = job.progress + '%';
+            
+            // Show "Done!" in bold green when 100%, otherwise show percentage
+            if (job.progress === 100 || job.status === 'completed') {
+                overallText.textContent = 'Done!';
+                overallText.style.fontWeight = 'bold';
+                overallText.style.color = '#27ae60'; // Green
+            } else {
+                overallText.textContent = job.progress + '%';
+                overallText.style.fontWeight = 'normal';
+                overallText.style.color = '#666'; // Default gray
+            }
             
             // Add animation if processing, mark as done if completed
             if (job.status === 'completed') {
@@ -530,10 +620,10 @@
                 }
             }
 
-            // Initialize table if needed
+            // Initialize progress container if needed
             if (job.hour_progress && Object.keys(job.hour_progress).length > 0) {
-                const tbody = document.getElementById('progressTableBody');
-                if (tbody.children.length === 0 || tbody.children[0].textContent.includes('Initializing')) {
+                const container = document.getElementById('progressContainer');
+                if (container.children.length === 0 || container.textContent.includes('Initializing')) {
                     initializeProgressTable(job.hour_progress);
                 }
             }
@@ -545,70 +635,46 @@
         }
 
         function updateHourProgress(hour, progress) {
-            const row = document.querySelector(`tr[data-hour="${hour}"]`);
-            if (!row) {
-                // Row doesn't exist yet, initialize table
-                initializeProgressTable({[hour]: progress});
-                return;
+            // Extract date from display_hour for grouping
+            const displayHour = (progress && progress.display_hour) ? progress.display_hour : formatHour(hour);
+            const [date] = displayHour.split(' ');
+            
+            // Update lifelog status (shared across all hours in the same date)
+            const lifelogStatusEl = document.querySelector(`.stage-status[data-date="${date}"][data-stage="lifelog"]`);
+            if (lifelogStatusEl) {
+                lifelogStatusEl.innerHTML = renderStatusIcon(progress.lifelog || 'pending');
             }
-
-            // Update each stage
-            ['lifelog', 'audio', 'diarize', 'elasticsearch'].forEach(stage => {
-                const cell = row.querySelector(`td[data-stage="${stage}"]`);
-                if (!cell) return;
-
-                const progressFill = cell.querySelector('.progress-fill');
-                const checkmark = cell.querySelector('.checkmark');
-                const status = progress[stage];
-                const stageProgress = progress[`${stage}_progress`] || 0;
-
-                if (status === 'done') {
-                    progressFill.style.width = '100%';
-                    progressFill.classList.add('done');
-                    progressFill.classList.remove('running');
-                    checkmark.style.display = 'inline';
-                } else if (status === 'running') {
-                    progressFill.style.width = stageProgress + '%';
-                    progressFill.classList.remove('done');
-                    progressFill.classList.add('running');
-                    checkmark.style.display = 'none';
-                } else if (status === 'failed') {
-                    progressFill.classList.remove('running');
-                    progressFill.style.width = '100%';
-                    progressFill.style.background = '#e74c3c';
-                    checkmark.style.display = 'none';
-                    // Only show error message if it exists and hasn't been shown already
-                    if (progress.error && progress.error.trim() !== '') {
-                        // Check if error div already exists
-                        let errorDiv = cell.querySelector('.error');
-                        if (!errorDiv) {
-                            errorDiv = document.createElement('div');
-                            errorDiv.className = 'error';
-                            cell.appendChild(errorDiv);
-                        }
-                        errorDiv.textContent = progress.error;
+            
+            // Update hour-specific stages (audio, diarize, elasticsearch)
+            ['audio', 'diarize', 'elasticsearch'].forEach(stage => {
+                const statusEl = document.querySelector(`.stage-status[data-hour="${hour}"][data-stage="${stage}"]`);
+                if (!statusEl) {
+                    // Element doesn't exist yet, reinitialize
+                    initializeProgressTable({[hour]: progress});
+                    return;
+                }
+                
+                const status = progress[stage] || 'pending';
+                statusEl.innerHTML = renderStatusIcon(status);
+                
+                // Show error message if failed
+                if (status === 'failed' && progress.error && progress.error.trim() !== '') {
+                    let errorDiv = statusEl.parentElement.querySelector('.error');
+                    if (!errorDiv) {
+                        errorDiv = document.createElement('div');
+                        errorDiv.className = 'error';
+                        statusEl.parentElement.appendChild(errorDiv);
                     }
-                } else if (status === 'skipped') {
-                    // For skipped status (e.g., Elasticsearch not configured), show grayed out
-                    progressFill.style.width = '100%';
-                    progressFill.style.background = '#ccc';
-                    progressFill.classList.remove('done', 'running');
-                    checkmark.style.display = 'none';
-                    // Optionally show "N/A" text
-                    let naText = cell.querySelector('.na-text');
-                    if (!naText) {
-                        naText = document.createElement('span');
-                        naText.className = 'na-text';
-                        naText.textContent = 'N/A';
-                        naText.style.color = '#999';
-                        naText.style.fontSize = '12px';
-                        cell.querySelector('.progress-container').appendChild(naText);
-                    }
+                    errorDiv.textContent = progress.error;
                 } else {
-                    progressFill.style.width = '0%';
-                    progressFill.classList.remove('done');
-                    progressFill.classList.remove('running');
-                    checkmark.style.display = 'none';
+                    // Remove error message if status changed
+                    const hourRow = statusEl.closest('.hour-row');
+                    if (hourRow) {
+                        const errorDiv = hourRow.querySelector('.error');
+                        if (errorDiv) {
+                            errorDiv.remove();
+                        }
+                    }
                 }
             });
         }
@@ -689,13 +755,16 @@
             document.getElementById('endTime').value = formatDateTimeLocal(endTime);
 
             // Reset progress table
-            document.getElementById('progressTableBody').innerHTML = '';
+            document.getElementById('progressContainer').innerHTML = '';
 
             // Reset overall progress
             const overallFill = document.getElementById('overallProgressFill');
             overallFill.style.width = '0%';
             overallFill.classList.remove('running', 'done');
-            document.getElementById('overallProgressText').textContent = '0%';
+            const overallText = document.getElementById('overallProgressText');
+            overallText.textContent = '0%';
+            overallText.style.fontWeight = 'normal';
+            overallText.style.color = '#666';
 
             // Hide cancel button, show Get More button
             document.getElementById('cancelBtn').style.display = 'none';

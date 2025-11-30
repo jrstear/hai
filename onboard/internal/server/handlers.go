@@ -574,18 +574,49 @@ func (s *Server) processJob(job *Job) {
 	wg.Wait()
 
 	// Check if all hours are complete
+	// All stages must be Done (or Skipped for Elasticsearch if not configured)
 	allDone := true
 	for _, hp := range job.HourProgress {
+		// Check lifelog (should be done for all hours in the same date)
+		if hp.Lifelog != StageStatusDone {
+			allDone = false
+			break
+		}
+		// Check audio
+		if hp.Audio != StageStatusDone {
+			allDone = false
+			break
+		}
+		// Check diarize
 		if hp.Diarize != StageStatusDone {
+			allDone = false
+			break
+		}
+		// Check elasticsearch (can be Done or Skipped)
+		if hp.Elasticsearch != StageStatusDone && hp.Elasticsearch != StageStatusSkipped {
 			allDone = false
 			break
 		}
 	}
 
 	if allDone {
-		s.updateJob(job, JobStatusCompleted, 100, "Processing complete!", "")
+		s.updateJob(job, JobStatusCompleted, 100, "Processing completed successfully!", "")
 	} else {
-		s.updateJob(job, JobStatusFailed, 0, "Some hours failed", "")
+		// Check if there are any failures
+		hasFailures := false
+		for _, hp := range job.HourProgress {
+			if hp.Lifelog == StageStatusFailed || hp.Audio == StageStatusFailed ||
+				hp.Diarize == StageStatusFailed || hp.Elasticsearch == StageStatusFailed {
+				hasFailures = true
+				break
+			}
+		}
+		if hasFailures {
+			s.updateJob(job, JobStatusFailed, job.Progress, "Processing completed with errors.", "")
+		} else {
+			// Still processing or incomplete
+			s.updateJob(job, JobStatusProcessing, job.Progress, "Processing in progress...", "")
+		}
 	}
 }
 
