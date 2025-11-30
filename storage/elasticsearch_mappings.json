@@ -1,0 +1,115 @@
+{
+  "mappings": {
+    "properties": {
+      "speakers": {
+        "properties": {
+          "id": {
+            "type": "keyword"
+          },
+          "embedding": {
+            "type": "dense_vector",
+            "dims": 256,
+            "index": true,
+            "similarity": "cosine"
+          },
+          "first_seen": {
+            "type": "date"
+          },
+          "last_seen": {
+            "type": "date"
+          },
+          "contact_id": {
+            "type": "keyword",
+            "index": false
+          },
+          "created_at": {
+            "type": "date"
+          },
+          "updated_at": {
+            "type": "date"
+          }
+        }
+      },
+      "recordings": {
+        "properties": {
+          "id": {
+            "type": "keyword"
+          },
+          "file_path": {
+            "type": "keyword"
+          },
+          "start_time": {
+            "type": "date"
+          },
+          "duration_seconds": {
+            "type": "float"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "format": {
+            "type": "keyword"
+          },
+          "diarized_at": {
+            "type": "date"
+          },
+          "processing_time": {
+            "type": "float"
+          },
+          "rtf": {
+            "type": "float"
+          },
+          "device": {
+            "type": "keyword"
+          },
+          "created_at": {
+            "type": "date"
+          }
+        }
+      },
+      "segments": {
+        "properties": {
+          "id": {
+            "type": "keyword"
+          },
+          "speaker_id": {
+            "type": "keyword"
+          },
+          "recording_id": {
+            "type": "keyword"
+          },
+          "local_speaker_id": {
+            "type": "keyword"
+          },
+          "start_time": {
+            "type": "float"
+          },
+          "end_time": {
+            "type": "float"
+          },
+          "duration": {
+            "type": "float"
+          },
+          "start_byte_offset": {
+            "type": "long"
+          },
+          "end_byte_offset": {
+            "type": "long"
+          },
+          "created_at": {
+            "type": "date"
+          }
+        }
+      }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "index": {
+      "knn": true,
+      "knn.algo_param.ef_search": 100
+    }
+  }
+}
+

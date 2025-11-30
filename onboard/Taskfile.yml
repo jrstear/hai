@@ -117,3 +117,16 @@ tasks:
       - 'docker info > /dev/null 2>&1 || (echo "Error: Docker daemon not running" && exit 1)'
       - 'echo "✅ Docker is ready"'
 
+  build-load-es:
+    desc: Build the load-es CLI utility
+    cmds:
+      - go build -o bin/load-es ./cmd/load-es
+    generates:
+      - bin/load-es
+
+  load-es:
+    desc: Load diarization results to Elasticsearch
+    deps: [build-load-es]
+    cmds:
+      - ./bin/load-es {{.CLI_ARGS}}
+

@@ -1,0 +1,61 @@
+# Git
+.git
+.gitignore
+.beads
+
+# Documentation
+*.md
+history/
+AGENTS.md
+QUICK_START.md
+RESUME_GUIDE.md
+CLEANUP_SUMMARY.md
+
+# Data files (user-specific)
+data/
+*.ogg
+*.mp3
+*.json
+!go.mod
+!go.sum
+!package.json
+!package-lock.json
+
+# Build artifacts
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Test files
+*_test.go
+*_test.py
+coverage.out
+coverage.html
+

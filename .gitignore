@@ -30,12 +30,14 @@ venv/
 env/
 ENV/
 
-# Audio files (large binaries - decide if you want these in git)
-# Uncomment if you don't want to track audio files:
-# data/audio/
-# *.ogg
-# *.mp3
-# *.wav
+# Data files (downloaded audio, lifelogs, diarization results)
+onboard/data/
+data/
+
+# Audio files (large binaries)
+*.ogg
+*.mp3
+*.wav
 
 # Temporary files
 *.tmp

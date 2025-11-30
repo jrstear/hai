@@ -1,0 +1,18 @@
+# Example override file for local customization
+# Copy this to docker-compose.override.yml and modify as needed
+# docker-compose.override.yml is automatically loaded by docker-compose
+
+services:
+  elasticsearch:
+    # Override JVM heap size if needed
+    # environment:
+    #   - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+    
+    # Override port mapping if 9200 is already in use
+    # ports:
+    #   - "9201:9200"
+    
+    # Add additional volumes if needed
+    # volumes:
+    #   - ./custom-config:/usr/share/elasticsearch/config/custom
+

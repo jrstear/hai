@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,7 +14,9 @@ import (
 	"time"
 
 	"hai/onboard/internal/diarization"
+	"hai/onboard/internal/export2elastic"
 	"hai/onboard/internal/fetch"
+	"hai/storage"
 
 	"github.com/google/uuid"
 )
@@ -24,15 +27,37 @@ type Server struct {
 	mu        sync.RWMutex
 	outputDir string
 	timezone  string
+	storage   storage.Storage          // Optional Elasticsearch storage
+	exporter  *export2elastic.Exporter // Optional exporter
 }
 
 // NewServer creates a new server instance
+// If ELASTICSEARCH_URL is set, initializes Elasticsearch storage and exporter
 func NewServer(outputDir string) *Server {
-	return &Server{
+	srv := &Server{
 		jobs:      make(map[string]*Job),
 		outputDir: outputDir,
 		timezone:  "America/Denver", // Default timezone
 	}
+
+	// Initialize Elasticsearch storage if URL is provided
+	esURL := os.Getenv("ELASTICSEARCH_URL")
+	if esURL != "" {
+		log.Printf("Initializing Elasticsearch storage at: %s", esURL)
+		esStorage, err := storage.NewElasticsearchStorage(esURL)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize Elasticsearch storage: %v", err)
+			log.Printf("Continuing without Elasticsearch export. Set ELASTICSEARCH_URL to enable export.")
+		} else {
+			srv.storage = esStorage
+			srv.exporter = export2elastic.NewExporter(esStorage)
+			log.Printf("Elasticsearch storage initialized successfully")
+		}
+	} else {
+		log.Printf("ELASTICSEARCH_URL not set. Skipping Elasticsearch export.")
+	}
+
+	return srv
 }
 
 // HandleSubmit handles job submission
@@ -120,16 +145,24 @@ func (s *Server) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		hourInTZ := hour.In(loc)
 		displayHour := hourInTZ.Format("2006-01-02 15:00")
 
+		// Initialize Elasticsearch status based on whether exporter is available
+		elasticsearchStatus := StageStatusPending
+		if s.exporter == nil {
+			elasticsearchStatus = StageStatusSkipped
+		}
+
 		job.HourProgress[hourKey] = &HourProgress{
-			Hour:            hourKey,
-			DisplayHour:     displayHour,
-			Date:            dateKey,
-			Lifelog:         StageStatusPending,
-			LifelogProgress: 0,
-			Audio:           StageStatusPending,
-			AudioProgress:   0,
-			Diarize:         StageStatusPending,
-			DiarizeProgress: 0,
+			Hour:                  hourKey,
+			DisplayHour:           displayHour,
+			Date:                  dateKey,
+			Lifelog:               StageStatusPending,
+			LifelogProgress:       0,
+			Audio:                 StageStatusPending,
+			AudioProgress:         0,
+			Diarize:               StageStatusPending,
+			DiarizeProgress:       0,
+			Elasticsearch:         elasticsearchStatus,
+			ElasticsearchProgress: 0,
 		}
 	}
 
@@ -304,11 +337,21 @@ func (s *Server) processJob(job *Job) {
 					utcDate = dateTimeInTZ.UTC()
 				}
 
-				// Update all hours that might be affected by this lifelog fetch
-				// Since lifelogs are per-day in user's timezone, we need to find matching UTC dates
+				// date is already in user's timezone format (YYYY-MM-DD)
+				dateInTZ := date
 				utcDateStr := utcDate.Format("2006-01-02")
-				for hourKey, hp := range job.HourProgress {
-					if hp.Date == utcDateStr {
+
+				// Update all hours that might be affected by this lifelog fetch
+				// Since lifelogs are per-day in user's timezone, check each hour in user's timezone
+				for hourKey := range job.HourProgress {
+					// Parse the hourKey (which is in UTC format "2006-01-02 15:00")
+					hourUTC, err := time.Parse("2006-01-02 15:00", hourKey)
+					if err != nil {
+						continue
+					}
+					// Convert to user's timezone and check if it falls on the date we're processing
+					hourInTZ := hourUTC.In(loc)
+					if hourInTZ.Format("2006-01-02") == dateInTZ {
 						s.updateHourStage(job, hourKey, "lifelog", StageStatusRunning, 0, "")
 					}
 				}
@@ -317,11 +360,17 @@ func (s *Server) processJob(job *Job) {
 				_, wasCached, err := fetch.FetchLifelogs(job.APIKey, utcDate, job.Timezone, s.outputDir, job.Reprocess)
 
 				if err != nil {
-					// Only show error on first hour of the UTC date to avoid duplicate error messages
-					utcDateStr := utcDate.Format("2006-01-02")
+					// Mark all hours that fall within this date in user's timezone as failed
 					firstHourKey := ""
-					for hourKey, hp := range job.HourProgress {
-						if hp.Date == utcDateStr {
+					for hourKey := range job.HourProgress {
+						// Parse the hourKey (which is in UTC format "2006-01-02 15:00")
+						hourUTC, err := time.Parse("2006-01-02 15:00", hourKey)
+						if err != nil {
+							continue
+						}
+						// Convert to user's timezone and check if it falls on the date we're processing
+						hourInTZ := hourUTC.In(loc)
+						if hourInTZ.Format("2006-01-02") == dateInTZ {
 							if firstHourKey == "" {
 								firstHourKey = hourKey
 							}
@@ -336,10 +385,17 @@ func (s *Server) processJob(job *Job) {
 					continue
 				}
 
-				// Mark lifelog as done for all hours of the UTC date (utcDateStr already declared above)
-				job.DateLifelogDone[utcDateStr] = true
-				for hourKey, hp := range job.HourProgress {
-					if hp.Date == utcDateStr {
+				// Mark lifelog as done for all hours that fall within this date in user's timezone
+				// We need to check each hour in the user's timezone, not just UTC date
+				for hourKey := range job.HourProgress {
+					// Parse the hourKey (which is in UTC format "2006-01-02 15:00")
+					hourUTC, err := time.Parse("2006-01-02 15:00", hourKey)
+					if err != nil {
+						continue
+					}
+					// Convert to user's timezone and check if it falls on the date we're processing
+					hourInTZ := hourUTC.In(loc)
+					if hourInTZ.Format("2006-01-02") == dateInTZ {
 						if wasCached {
 							// Already existed, mark as done immediately
 							s.updateHourStage(job, hourKey, "lifelog", StageStatusDone, 100, "")
@@ -350,14 +406,19 @@ func (s *Server) processJob(job *Job) {
 					}
 				}
 
-				// Send all hours for the UTC date to audio channel (all times in UTC)
-				utcDateStrForAudio := utcDateStr
+				// Mark this date as done (in user's timezone)
+				job.DateLifelogDone[utcDateStr] = true
+
+				// Send all hours that fall within this date in user's timezone to audio channel
+				// This handles UTC day boundary crossings correctly
 				for _, hour := range hours {
 					select {
 					case <-job.Cancel:
 						return
 					default:
-						if hour.UTC().Format("2006-01-02") == utcDateStrForAudio {
+						// Convert hour to user's timezone and check if it falls on the date we're processing
+						hourInTZ := hour.In(loc)
+						if hourInTZ.Format("2006-01-02") == dateInTZ {
 							audioChan <- hour
 						}
 					}
@@ -471,9 +532,39 @@ func (s *Server) processJob(job *Job) {
 					// Don't print extra messages - the "already exists" message from RunDiarization is sufficient
 					s.updateHourStage(job, hourKey, "diarize", StageStatusDone, 100, "")
 				} else {
-					// Just diarized, mark as done
-					log.Printf("Diarized %s: %d speakers, %d segments", audioFile, result.SpeakerCount, result.SegmentCount)
+					// Just diarized, mark as done (no completion message - consistent with other stages)
 					s.updateHourStage(job, hourKey, "diarize", StageStatusDone, 100, "")
+				}
+
+				// Export to Elasticsearch if configured
+				if s.exporter != nil {
+					// Reference the diarization JSON file (that's what we're loading)
+					diarizationJSONPath := strings.TrimSuffix(audioFile, filepath.Ext(audioFile)) + ".json"
+					relPath := extractRelativePathForOutput(diarizationJSONPath)
+
+					ctx := context.Background()
+					// Use relative path from outputDir for consistency (audio file path is used for recording metadata)
+					audioRelPath, err := filepath.Rel(s.outputDir, audioFile)
+					if err != nil {
+						// If relative path fails, use absolute path
+						audioRelPath = audioFile
+					}
+					_, _, wasSkipped, err := s.exporter.ExportResult(ctx, result, audioRelPath)
+					if err != nil {
+						fmt.Printf("Failed to load %s to Elasticsearch: %v\n", relPath, err)
+						s.updateHourStage(job, hourKey, "elasticsearch", StageStatusFailed, 0, err.Error())
+						// Don't fail the job - export is optional
+					} else if wasSkipped {
+						fmt.Printf("data/%s already exists - skipping loading Elasticsearch.\n", relPath)
+						s.updateHourStage(job, hourKey, "elasticsearch", StageStatusDone, 100, "")
+					} else {
+						// Print loading message (ExportResult already completed, but we print for user feedback)
+						fmt.Printf("Loading %s to Elasticsearch\n", relPath)
+						s.updateHourStage(job, hourKey, "elasticsearch", StageStatusDone, 100, "")
+					}
+				} else {
+					// Elasticsearch not configured - mark as skipped
+					s.updateHourStage(job, hourKey, "elasticsearch", StageStatusSkipped, 0, "")
 				}
 			}
 		}
@@ -528,18 +619,26 @@ func (s *Server) updateHourStage(job *Job, hourKey string, stage string, status 
 	case "diarize":
 		hp.Diarize = status
 		hp.DiarizeProgress = progress
+	case "elasticsearch":
+		hp.Elasticsearch = status
+		hp.ElasticsearchProgress = progress
 	}
 
 	if errorMsg != "" {
 		hp.Error = errorMsg
 	}
 
-	// Update overall progress
+	// Update overall progress (include elasticsearch if not skipped)
 	totalProgress := 0
 	count := 0
 	for _, h := range job.HourProgress {
 		totalProgress += h.LifelogProgress + h.AudioProgress + h.DiarizeProgress
 		count += 3
+		// Only count elasticsearch if it's not skipped
+		if h.Elasticsearch != StageStatusSkipped {
+			totalProgress += h.ElasticsearchProgress
+			count++
+		}
 	}
 	if count > 0 {
 		job.Progress = totalProgress / count
@@ -657,4 +756,33 @@ func extractHourFromPath(path string) string {
 	}
 
 	return ""
+}
+
+// extractRelativePathForOutput extracts a relative path for cleaner stdout output
+// Similar to extractHourFromPath but returns the full relative path (YYYY/MM/DD/HH.ogg)
+func extractRelativePathForOutput(fullPath string) string {
+	// Normalize path separators
+	normalized := filepath.ToSlash(fullPath)
+	parts := strings.Split(normalized, "/")
+
+	// Look for "data" directory and extract everything after it
+	for i, part := range parts {
+		if part == "data" && i+4 <= len(parts) {
+			// Found data directory, extract YYYY/MM/DD/filename
+			return strings.Join(parts[i+1:], "/")
+		}
+	}
+
+	// Fallback: try to extract YYYY/MM/DD/HH.ogg pattern directly
+	for i := 0; i < len(parts)-1; i++ {
+		part := parts[i]
+		if len(part) == 4 && part[0] == '2' {
+			if i+3 < len(parts) {
+				return strings.Join(parts[i:], "/")
+			}
+		}
+	}
+
+	// If we can't extract, return just the filename
+	return filepath.Base(fullPath)
 }

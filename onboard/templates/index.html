@@ -313,6 +313,7 @@
                         <th>Download Lifelog</th>
                         <th>Download Audio</th>
                         <th>Diarize Audio</th>
+                        <th>Load Elasticsearch</th>
                     </tr>
                 </thead>
                 <tbody id="progressTableBody">
@@ -416,7 +417,7 @@
             const hours = Object.keys(hourProgress || {}).sort();
             
             if (hours.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">No hours to process</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">No hours to process</td></tr>';
                 return;
             }
             
@@ -443,6 +444,14 @@
                         </div>
                     </td>
                     <td class="stage-cell" data-stage="diarize">
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 0%"></div>
+                            </div>
+                            <span class="checkmark" style="display: none;">✓</span>
+                        </div>
+                    </td>
+                    <td class="stage-cell" data-stage="elasticsearch">
                         <div class="progress-container">
                             <div class="progress-bar">
                                 <div class="progress-fill" style="width: 0%"></div>
@@ -544,7 +553,7 @@
             }
 
             // Update each stage
-            ['lifelog', 'audio', 'diarize'].forEach(stage => {
+            ['lifelog', 'audio', 'diarize', 'elasticsearch'].forEach(stage => {
                 const cell = row.querySelector(`td[data-stage="${stage}"]`);
                 if (!cell) return;
 
@@ -578,6 +587,22 @@
                             cell.appendChild(errorDiv);
                         }
                         errorDiv.textContent = progress.error;
+                    }
+                } else if (status === 'skipped') {
+                    // For skipped status (e.g., Elasticsearch not configured), show grayed out
+                    progressFill.style.width = '100%';
+                    progressFill.style.background = '#ccc';
+                    progressFill.classList.remove('done', 'running');
+                    checkmark.style.display = 'none';
+                    // Optionally show "N/A" text
+                    let naText = cell.querySelector('.na-text');
+                    if (!naText) {
+                        naText = document.createElement('span');
+                        naText.className = 'na-text';
+                        naText.textContent = 'N/A';
+                        naText.style.color = '#999';
+                        naText.style.fontSize = '12px';
+                        cell.querySelector('.progress-container').appendChild(naText);
                     }
                 } else {
                     progressFill.style.width = '0%';

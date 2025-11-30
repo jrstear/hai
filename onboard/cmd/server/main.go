@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"hai/onboard/internal/server"
 )
@@ -81,7 +82,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 		filepath.Join("..", "..", "templates", "index.html"),
 		filepath.Join("onboard", "templates", "index.html"),
 	}
-	
+
 	var data []byte
 	var err error
 	for _, templatePath := range possiblePaths {
@@ -90,10 +91,30 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	
+
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Template not found. Tried: %v", possiblePaths), http.StatusInternalServerError)
 		return
+	}
+
+	// Inject API key from environment variable if set
+	apiKey := os.Getenv("LIMITLESS_API_KEY")
+	if apiKey != "" {
+		// Replace placeholder or inject script to set API key
+		templateContent := string(data)
+		// Inject a script tag before closing </body> to set the API key
+		script := fmt.Sprintf(`<script>
+            // Pre-fill API key from environment variable
+            (function() {
+                const apiKeyInput = document.getElementById('apiKey');
+                if (apiKeyInput && !apiKeyInput.value) {
+                    apiKeyInput.value = %q;
+                }
+            })();
+        </script>`, apiKey)
+		// Insert before </body>
+		templateContent = strings.Replace(templateContent, "</body>", script+"</body>", 1)
+		data = []byte(templateContent)
 	}
 
 	w.Header().Set("Content-Type", "text/html")
@@ -103,7 +124,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 func openBrowser(url string) {
 	// Try to open browser
 	var err error
-	
+
 	// macOS
 	if _, err = os.Stat("/usr/bin/open"); err == nil {
 		cmd := exec.Command("open", url)
@@ -117,7 +138,7 @@ func openBrowser(url string) {
 		cmd := exec.Command("cmd", "/c", "start", url)
 		err = cmd.Start()
 	}
-	
+
 	if err == nil {
 		log.Printf("Opened browser to: %s", url)
 	} else {
