@@ -55,3 +55,13 @@ data/
 # Logs
 *.log
 
+# Build artifacts (binaries)
+bin/
+onboard/bin/
+onboard/*/map-speakers
+onboard/*/load-es
+onboard/*/server
+onboard/map-speakers
+onboard/load-es
+onboard/server
+
