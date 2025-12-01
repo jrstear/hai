@@ -1,0 +1,25 @@
+# Taskfile for root-level scripts and utilities
+# Install task: https://taskfile.dev/installation/
+# Run: task <command>
+
+version: '3'
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  build-setup-kibana:
+    desc: Build the setup-kibana-index-patterns script
+    cmds:
+      - go build -o bin/setup-kibana-index-patterns scripts/setup-kibana-index-patterns.go
+    generates:
+      - bin/setup-kibana-index-patterns
+
+  setup-kibana-index-patterns:
+    desc: Set up Kibana index patterns automatically
+    deps: [build-setup-kibana]
+    cmds:
+      - ./bin/setup-kibana-index-patterns {{.CLI_ARGS}}
+

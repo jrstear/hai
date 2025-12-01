@@ -116,10 +116,102 @@ services:
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
 ```
 
+## Kibana Service
+
+Kibana is configured to run alongside Elasticsearch for data visualization and analysis.
+
+### Starting Kibana
+
+Kibana starts automatically when you start Elasticsearch with the `elasticsearch` profile:
+
+```bash
+docker-compose --profile elasticsearch up -d
+```
+
+This will:
+- Start Kibana on port 5601
+- Connect to Elasticsearch automatically
+- Disable security for local development (matches Elasticsearch)
+
+### Accessing Kibana
+
+Open your browser and navigate to:
+```
+http://localhost:5601
+```
+
+### Setting Up Index Patterns
+
+**Automated Setup (Recommended):**
+
+Use the setup script to automatically create all index patterns:
+
+```bash
+task setup-kibana-index-patterns
+```
+
+Or run directly:
+```bash
+./bin/setup-kibana-index-patterns
+```
+
+This will create index patterns for:
+- `speakers` - Time field: `created_at`
+- `recordings` - Time field: `start_time`
+- `segments` - Time field: `created_at`
+- `lifelogs` - Time field: `start_time`
+- `lifelog_blockquotes` - Time field: `start_time`
+
+**Manual Setup:**
+
+If you prefer to set them up manually:
+
+1. Go to **Stack Management** → **Index Patterns** → **Create index pattern**
+2. Create patterns for each index:
+   - `speakers` - Time field: `created_at`
+   - `recordings` - Time field: `start_time`
+   - `segments` - Time field: `created_at` (or use `start_time` if available)
+   - `lifelogs` - Time field: `start_time`
+   - `lifelog_blockquotes` - Time field: `start_time`
+
+### Useful Kibana Features
+
+- **Discover**: Browse and search your data
+- **Visualize**: Create charts and graphs
+- **Dashboard**: Combine multiple visualizations
+- **Dev Tools**: Run Elasticsearch queries directly
+
+### Checking Kibana Status
+
+Check if Kibana is healthy:
+```bash
+curl http://localhost:5601/api/status
+```
+
+Or view logs:
+```bash
+docker-compose --profile elasticsearch logs -f kibana
+```
+
+### Port Conflicts
+
+If port 5601 is already in use, you can override it in `docker-compose.override.yml`:
+
+```yaml
+services:
+  kibana:
+    ports:
+      - "5602:5601"
+```
+
+Then access Kibana at `http://localhost:5602`.
+
 ## Next Steps
 
-Once Elasticsearch is running, you can:
-1. Implement the Elasticsearch storage backend (`hai-hh1`)
-2. Set up the full Docker Compose stack with all services (`hai-8us`)
-3. Test the storage abstraction layer with Elasticsearch
+Once Elasticsearch and Kibana are running, you can:
+1. Set up index patterns in Kibana (see above)
+2. Explore your data using Kibana Discover
+3. Create visualizations and dashboards
+4. Review speaker name mappings and correct any issues
+5. Query and analyze lifelog blockquotes, segments, and speakers
 
