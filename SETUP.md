@@ -2,6 +2,8 @@
 
 This guide will help you set up the development environment for the Hai Audio Lifelog Processing System.
 
+**For a complete end-to-end guide from clone to Kibana with data, see [DEVELOPER_SETUP.md](DEVELOPER_SETUP.md).**
+
 ## Prerequisites
 
 - macOS (tested on M1 Mac)
