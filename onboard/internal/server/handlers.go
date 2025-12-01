@@ -116,20 +116,21 @@ func (s *Server) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	// Create job
 	jobID := uuid.New().String()
 	job := &Job{
-		ID:              jobID,
-		Status:          JobStatusPending,
-		Progress:        0,
-		Message:         "Job created",
-		APIKey:          req.APIKey,
-		StartTime:       startTime,
-		EndTime:         endTime,
-		Timezone:        timezone,
-		Reprocess:       req.Reprocess,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-		HourProgress:    make(map[string]*HourProgress),
-		DateLifelogDone: make(map[string]bool),
-		Cancel:          make(chan struct{}),
+		ID:                       jobID,
+		Status:                   JobStatusPending,
+		Progress:                 0,
+		Message:                  "Job created",
+		APIKey:                   req.APIKey,
+		StartTime:                startTime,
+		EndTime:                  endTime,
+		Timezone:                 timezone,
+		Reprocess:                req.Reprocess,
+		CreatedAt:                time.Now(),
+		UpdatedAt:                time.Now(),
+		HourProgress:             make(map[string]*HourProgress),
+		DateLifelogDone:          make(map[string]bool),
+		DateLifelogElasticsearch: make(map[string]StageStatus),
+		Cancel:                   make(chan struct{}),
 	}
 
 	// Initialize hour progress and track unique dates for lifelog fetching
@@ -409,8 +410,83 @@ func (s *Server) processJob(job *Job) {
 				// Mark this date as done (in user's timezone)
 				job.DateLifelogDone[utcDateStr] = true
 
-				// Send all hours that fall within this date in user's timezone to audio channel
-				// This handles UTC day boundary crossings correctly
+				// Construct path: data/YYYY/MM/DD/lifelog.json (in UTC)
+				relPath := filepath.Join(
+					utcDate.Format("2006"),
+					utcDate.Format("01"),
+					utcDate.Format("02"),
+					"lifelog.json",
+				)
+				lifelogPath := filepath.Join(s.outputDir, relPath)
+
+				// Export lifelog to Elasticsearch if configured
+				if s.exporter != nil {
+					relPathForMsg := relPath
+					ctx := context.Background()
+
+					// Initialize lifelog Elasticsearch status for this date
+					s.mu.Lock()
+					if job.DateLifelogElasticsearch[dateInTZ] == "" {
+						job.DateLifelogElasticsearch[dateInTZ] = StageStatusPending
+					}
+					s.mu.Unlock()
+
+					// Check if lifelogs already exist for this date
+					date, err := time.Parse("2006-01-02", utcDateStr)
+					if err == nil && s.storage != nil {
+						startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+						endOfDay := startOfDay.Add(24 * time.Hour)
+						existingLifelogs, checkErr := s.storage.ListLifelogs(ctx, &startOfDay, &endOfDay)
+						if checkErr == nil && len(existingLifelogs) > 0 {
+							// Lifelogs already exist - skip
+							fmt.Printf("data/%s is already in Elasticsearch - skipping loading.\n", relPathForMsg)
+							s.mu.Lock()
+							job.DateLifelogElasticsearch[dateInTZ] = StageStatusDone
+							s.mu.Unlock()
+						} else {
+							// Print loading message before attempting export
+							fmt.Printf("Loading data/%s to Elasticsearch\n", relPathForMsg)
+
+							s.mu.Lock()
+							job.DateLifelogElasticsearch[dateInTZ] = StageStatusRunning
+							s.mu.Unlock()
+
+							_, _, wasSkipped, exportErr := s.exporter.ExportLifelogs(ctx, lifelogPath)
+							if exportErr != nil {
+								fmt.Printf("Failed to load data/%s to Elasticsearch: %v\n", relPathForMsg, exportErr)
+								s.mu.Lock()
+								job.DateLifelogElasticsearch[dateInTZ] = StageStatusFailed
+								s.mu.Unlock()
+								// Don't fail the job - export is optional
+							} else if wasSkipped {
+								fmt.Printf("data/%s is already in Elasticsearch - skipping loading.\n", relPathForMsg)
+								s.mu.Lock()
+								job.DateLifelogElasticsearch[dateInTZ] = StageStatusDone
+								s.mu.Unlock()
+							} else {
+								s.mu.Lock()
+								job.DateLifelogElasticsearch[dateInTZ] = StageStatusDone
+								s.mu.Unlock()
+							}
+						}
+					}
+				} else {
+					// Elasticsearch not configured - mark as skipped
+					s.mu.Lock()
+					job.DateLifelogElasticsearch[dateInTZ] = StageStatusSkipped
+					s.mu.Unlock()
+				}
+
+				// Parse lifelog to determine which hours have audio
+				hoursWithAudio, _, err := fetch.ParseLifelogForAudioHours(lifelogPath, job.Timezone)
+				if err != nil {
+					log.Printf("Warning: Failed to parse lifelog for audio hours: %v", err)
+					// Fall back to processing all hours (current behavior)
+					hoursWithAudio = nil
+				}
+
+				// Filter hours based on lifelog data
+				// Mark hours as N/A if they don't have audio, and only send hours with audio to audio channel
 				for _, hour := range hours {
 					select {
 					case <-job.Cancel:
@@ -419,6 +495,21 @@ func (s *Server) processJob(job *Job) {
 						// Convert hour to user's timezone and check if it falls on the date we're processing
 						hourInTZ := hour.In(loc)
 						if hourInTZ.Format("2006-01-02") == dateInTZ {
+							hourKey := hour.UTC().Format("2006-01-02 15:00")
+
+							// Check if this hour has audio
+							if hoursWithAudio != nil {
+								if !hoursWithAudio[hourKey] {
+									// No audio for this hour - mark as N/A but count as done (100%) for progress
+									s.updateHourStage(job, hourKey, "audio", StageStatusNotAvailable, 100, "")
+									s.updateHourStage(job, hourKey, "diarize", StageStatusNotAvailable, 100, "")
+									s.updateHourStage(job, hourKey, "elasticsearch", StageStatusNotAvailable, 100, "")
+									// Lifelog is already done (we fetched it to determine this)
+									continue // Skip sending to audio channel
+								}
+							}
+
+							// Hour has audio - send to audio channel
 							audioChan <- hour
 						}
 					}
@@ -549,17 +640,33 @@ func (s *Server) processJob(job *Job) {
 						// If relative path fails, use absolute path
 						audioRelPath = audioFile
 					}
+
+					// Check if segments already exist before attempting export
+					// This allows us to print the skip message before doing work
+					// Extract recording ID from audio file path (same logic as export2elastic)
+					recordingID := extractRecordingIDFromAudioPath(audioRelPath)
+					if recordingID != "" && s.storage != nil {
+						existingSegments, checkErr := s.storage.GetSegmentsByRecording(ctx, recordingID)
+						if checkErr == nil && len(existingSegments) > 0 {
+							// Segments already exist in Elasticsearch - skip
+							fmt.Printf("data/%s is already in Elasticsearch - skipping loading.\n", relPath)
+							s.updateHourStage(job, hourKey, "elasticsearch", StageStatusDone, 100, "")
+							continue // Skip to next hour
+						}
+					}
+
+					// Print loading message before attempting export
+					fmt.Printf("Loading %s to Elasticsearch\n", relPath)
+
 					_, _, wasSkipped, err := s.exporter.ExportResult(ctx, result, audioRelPath)
 					if err != nil {
 						fmt.Printf("Failed to load %s to Elasticsearch: %v\n", relPath, err)
 						s.updateHourStage(job, hourKey, "elasticsearch", StageStatusFailed, 0, err.Error())
 						// Don't fail the job - export is optional
 					} else if wasSkipped {
-						fmt.Printf("data/%s already exists - skipping loading Elasticsearch.\n", relPath)
+						// This shouldn't happen if we checked above, but handle it anyway
 						s.updateHourStage(job, hourKey, "elasticsearch", StageStatusDone, 100, "")
 					} else {
-						// Print loading message (ExportResult already completed, but we print for user feedback)
-						fmt.Printf("Loading %s to Elasticsearch\n", relPath)
 						s.updateHourStage(job, hourKey, "elasticsearch", StageStatusDone, 100, "")
 					}
 				} else {
@@ -574,7 +681,7 @@ func (s *Server) processJob(job *Job) {
 	wg.Wait()
 
 	// Check if all hours are complete
-	// All stages must be Done (or Skipped for Elasticsearch if not configured)
+	// All stages must be Done, Skipped (for Elasticsearch if not configured), or NotAvailable (for hours with no audio)
 	allDone := true
 	for _, hp := range job.HourProgress {
 		// Check lifelog (should be done for all hours in the same date)
@@ -582,18 +689,18 @@ func (s *Server) processJob(job *Job) {
 			allDone = false
 			break
 		}
-		// Check audio
-		if hp.Audio != StageStatusDone {
+		// Check audio (can be Done or NotAvailable)
+		if hp.Audio != StageStatusDone && hp.Audio != StageStatusNotAvailable {
 			allDone = false
 			break
 		}
-		// Check diarize
-		if hp.Diarize != StageStatusDone {
+		// Check diarize (can be Done or NotAvailable)
+		if hp.Diarize != StageStatusDone && hp.Diarize != StageStatusNotAvailable {
 			allDone = false
 			break
 		}
-		// Check elasticsearch (can be Done or Skipped)
-		if hp.Elasticsearch != StageStatusDone && hp.Elasticsearch != StageStatusSkipped {
+		// Check elasticsearch (can be Done, Skipped, or NotAvailable)
+		if hp.Elasticsearch != StageStatusDone && hp.Elasticsearch != StageStatusSkipped && hp.Elasticsearch != StageStatusNotAvailable {
 			allDone = false
 			break
 		}
@@ -816,4 +923,75 @@ func extractRelativePathForOutput(fullPath string) string {
 
 	// If we can't extract, return just the filename
 	return filepath.Base(fullPath)
+}
+
+// extractRecordingIDFromAudioPath extracts the recording ID from an audio file path
+// Path format: data/YYYY/MM/DD/HH.ogg (in UTC)
+// Returns recording ID in format: rec_YYYY_MM_DD_HH
+func extractRecordingIDFromAudioPath(audioPath string) string {
+	// Normalize path separators
+	normalized := filepath.ToSlash(audioPath)
+	parts := strings.Split(normalized, "/")
+
+	// Look for YYYY/MM/DD/HH.ogg pattern
+	for i := 0; i < len(parts)-1; i++ {
+		part := parts[i]
+		// Look for year (4 digits starting with 2)
+		if len(part) == 4 && part[0] == '2' {
+			// Check if we have enough parts: YYYY/MM/DD/filename
+			if i+3 < len(parts) {
+				year := part
+				month := parts[i+1]
+				day := parts[i+2]
+				hourFile := parts[i+3]
+
+				// Extract hour from filename like "15.ogg"
+				hour := strings.TrimSuffix(hourFile, filepath.Ext(hourFile))
+
+				// Parse components
+				var y, m, d, h int
+				if _, err := fmt.Sscanf(year, "%d", &y); err != nil {
+					continue
+				}
+				if _, err := fmt.Sscanf(month, "%d", &m); err != nil {
+					continue
+				}
+				if _, err := fmt.Sscanf(day, "%d", &d); err != nil {
+					continue
+				}
+				if _, err := fmt.Sscanf(hour, "%d", &h); err != nil {
+					continue
+				}
+
+				// Generate recording ID: rec_YYYY_MM_DD_HH
+				return fmt.Sprintf("rec_%04d_%02d_%02d_%02d", y, m, d, h)
+			}
+		}
+	}
+
+	// Fallback: try to parse from directory structure
+	dir := filepath.Dir(audioPath)
+	base := filepath.Base(audioPath) // filename like "15.ogg"
+	hour := strings.TrimSuffix(base, filepath.Ext(base))
+
+	// Try to extract date from parent directories
+	dayDir := filepath.Base(dir)
+	monthDir := filepath.Base(filepath.Dir(dir))
+	yearDir := filepath.Base(filepath.Dir(filepath.Dir(dir)))
+
+	// Validate we have reasonable values
+	if len(yearDir) == 4 && len(monthDir) <= 2 && len(dayDir) <= 2 {
+		var y, m, d, h int
+		if _, err := fmt.Sscanf(yearDir, "%d", &y); err == nil {
+			if _, err := fmt.Sscanf(monthDir, "%d", &m); err == nil {
+				if _, err := fmt.Sscanf(dayDir, "%d", &d); err == nil {
+					if _, err := fmt.Sscanf(hour, "%d", &h); err == nil {
+						return fmt.Sprintf("rec_%04d_%02d_%02d_%02d", y, m, d, h)
+					}
+				}
+			}
+		}
+	}
+
+	return "" // Could not extract
 }

@@ -88,7 +88,15 @@ func main() {
 	exporter := export2elastic.NewExporter(esStorage)
 
 	// Export to Elasticsearch
-	relPath := export2elastic.ExtractRelativePathForOutput(*diarizationFile)
+	// Extract relative path for output message
+	normalized := filepath.ToSlash(*diarizationFile)
+	parts := strings.Split(normalized, "/data/")
+	var relPath string
+	if len(parts) > 1 {
+		relPath = parts[1]
+	} else {
+		relPath = filepath.Base(*diarizationFile)
+	}
 	
 	ctx := context.Background()
 	_, _, wasSkipped, err := exporter.ExportResult(ctx, &result, audioPath)
@@ -97,7 +105,7 @@ func main() {
 	}
 	
 	if wasSkipped {
-		fmt.Printf("data/%s already exists - skipping loading Elasticsearch.\n", relPath)
+		fmt.Printf("data/%s is already in Elasticsearch - skipping loading.\n", relPath)
 	} else {
 		fmt.Printf("Loading %s to Elasticsearch\n", relPath)
 	}

@@ -14,6 +14,8 @@ var (
 	ErrDuplicateKey = errors.New("duplicate key")
 	// ErrInvalidEmbedding is returned when an embedding has the wrong dimension
 	ErrInvalidEmbedding = errors.New("invalid embedding dimension")
+	// ErrZeroMagnitudeEmbedding is returned when an embedding has zero magnitude (all zeros)
+	ErrZeroMagnitudeEmbedding = errors.New("embedding has zero magnitude")
 )
 
 // Storage is the interface that all storage backends must implement
@@ -107,13 +109,71 @@ type Storage interface {
 	// This is used after byte offset indexing is complete
 	// Returns ErrNotFound if segment doesn't exist
 	UpdateSegmentByteOffsets(ctx context.Context, segmentID int64, startByteOffset, endByteOffset int64) error
+
+	// Lifelog operations
+
+	// CreateLifelog creates a new lifelog document
+	// Returns ErrDuplicateKey if lifelog with same ID already exists
+	CreateLifelog(ctx context.Context, lifelog *Lifelog) error
+
+	// GetLifelog retrieves a lifelog by ID
+	// Returns ErrNotFound if lifelog doesn't exist
+	GetLifelog(ctx context.Context, id string) (*Lifelog, error)
+
+	// ListLifelogs lists all lifelogs, optionally filtered by time range
+	// If startTime is not nil, only returns lifelogs starting at or after startTime
+	// If endTime is not nil, only returns lifelogs starting before endTime
+	// Results are sorted by start_time ascending
+	ListLifelogs(ctx context.Context, startTime *time.Time, endTime *time.Time) ([]*Lifelog, error)
+
+	// UpdateLifelog updates an existing lifelog record
+	// Only non-zero fields are updated
+	// Returns ErrNotFound if lifelog doesn't exist
+	UpdateLifelog(ctx context.Context, lifelog *Lifelog) error
+
+	// CreateLifelogBlockquote creates a blockquote from a lifelog
+	// Returns ErrDuplicateKey if blockquote with same ID already exists
+	CreateLifelogBlockquote(ctx context.Context, blockquote *LifelogBlockquote) error
+
+	// CreateLifelogBlockquotes creates multiple blockquote records in a single operation (bulk insert)
+	// This is more efficient than calling CreateLifelogBlockquote multiple times
+	// Returns the number of blockquotes created and any error
+	CreateLifelogBlockquotes(ctx context.Context, blockquotes []*LifelogBlockquote) (int, error)
+
+	// GetLifelogBlockquote retrieves a blockquote by ID
+	// Returns ErrNotFound if blockquote doesn't exist
+	GetLifelogBlockquote(ctx context.Context, id string) (*LifelogBlockquote, error)
+
+	// GetLifelogBlockquotesByLifelog retrieves all blockquotes for a given lifelog
+	// Results are sorted by start_time ascending
+	GetLifelogBlockquotesByLifelog(ctx context.Context, lifelogID string) ([]*LifelogBlockquote, error)
+
+	// GetLifelogBlockquotesByTimeRange retrieves blockquotes within a time range
+	// startTime and endTime are absolute UTC timestamps
+	// Results are sorted by start_time ascending
+	GetLifelogBlockquotesByTimeRange(ctx context.Context, startTime, endTime time.Time) ([]*LifelogBlockquote, error)
+
+	// UpdateLifelogBlockquote updates an existing blockquote record
+	// Only non-zero fields are updated
+	// Returns ErrNotFound if blockquote doesn't exist
+	UpdateLifelogBlockquote(ctx context.Context, blockquote *LifelogBlockquote) error
 }
 
-// ValidateEmbedding checks if an embedding has the correct dimension
+// ValidateEmbedding checks if an embedding has the correct dimension and non-zero magnitude
 func ValidateEmbedding(embedding []float32) error {
 	if len(embedding) != EmbeddingDimension {
 		return ErrInvalidEmbedding
 	}
+
+	// Check for zero magnitude (all zeros)
+	var sumSquares float64
+	for _, v := range embedding {
+		sumSquares += float64(v * v)
+	}
+	if sumSquares == 0 {
+		return ErrZeroMagnitudeEmbedding
+	}
+
 	return nil
 }
 
@@ -167,4 +227,3 @@ func FindBestMatch(embedding []float32, candidates []*Speaker, threshold float64
 
 	return bestMatch
 }
-

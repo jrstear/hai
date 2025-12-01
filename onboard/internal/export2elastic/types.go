@@ -2,6 +2,8 @@ package export2elastic
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"time"
 
 	"hai/onboard/internal/diarization"
@@ -65,6 +67,7 @@ func (e *Exporter) ExportResult(ctx context.Context, result *diarization.Result,
 
 // matchSpeakers matches diarization speaker embeddings to existing speakers
 // Returns a map from local speaker ID (e.g., "SPEAKER_00") to global speaker ID (e.g., "spkr_abc123")
+// Skips speakers with zero-magnitude embeddings (logs warning, creates speaker without embedding matching)
 func (e *Exporter) matchSpeakers(ctx context.Context, result *diarization.Result) (map[string]string, error) {
 	speakerMap := make(map[string]string)
 	now := time.Now().UTC()
@@ -75,6 +78,27 @@ func (e *Exporter) matchSpeakers(ctx context.Context, result *diarization.Result
 		embedding := make([]float32, len(embeddingFloat64))
 		for i, v := range embeddingFloat64 {
 			embedding[i] = float32(v)
+		}
+
+		// Validate embedding (dimension and magnitude)
+		if err := storage.ValidateEmbedding(embedding); err != nil {
+			if err == storage.ErrZeroMagnitudeEmbedding {
+				// Zero-magnitude embedding: skip matching but still create a speaker ID for segments
+				// This can happen with silent segments or diarization edge cases
+				log.Printf("Warning: Speaker %s has zero-magnitude embedding, skipping speaker matching. This may indicate silent segments or a diarization edge case.", localSpeakerID)
+				
+				// Create a new speaker without trying to match (we can't store zero embeddings)
+				// For now, we'll create a speaker ID but won't store it in Elasticsearch
+				// Segments will still reference this speaker ID, but it won't be matchable
+				speakerID := generateSpeakerID()
+				speakerMap[localSpeakerID] = speakerID
+				
+				// Log that we're skipping this speaker's embedding storage
+				log.Printf("Skipping Elasticsearch storage for speaker %s (zero-magnitude embedding). Segments will still be indexed with speaker ID %s.", localSpeakerID, speakerID)
+				continue
+			}
+			// Other validation errors (wrong dimension) should fail
+			return nil, fmt.Errorf("invalid embedding for speaker %s: %w", localSpeakerID, err)
 		}
 
 		// Find similar speakers using kNN search

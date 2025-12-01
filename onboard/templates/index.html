@@ -186,11 +186,22 @@
         }
 
         .status-icon.checkmark-skipped {
-            color: #1e8449; /* Darker green for skipped */
+            color: #3498db; /* Blue for skipped (cached/already present) */
+            font-weight: 600;
+        }
+        
+        .status-icon.skipped-text {
+            color: #3498db;
+            font-size: 12px;
+            font-weight: 500;
         }
 
         .status-icon.failed {
             color: #e74c3c;
+        }
+        .status-icon.not-available {
+            color: #999; /* Gray */
+            font-weight: normal;
         }
 
         /* Spinner */
@@ -212,25 +223,42 @@
         .date-group {
             margin-bottom: 20px;
         }
+        
+        .date-separator {
+            border-top: 2px solid #e0e0e0;
+            margin: 15px 0 10px 0;
+        }
 
         .date-header {
             font-weight: 600;
             color: #333;
             padding: 10px 0;
-            border-bottom: 2px solid #e0e0e0;
             margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
         }
-
-        .lifelog-row {
-            padding: 8px 0;
-            margin-bottom: 4px;
+        
+        .date-header .date-label {
+            font-weight: 600;
         }
-
-        .lifelog-row .label {
-            display: inline-block;
-            width: 150px;
+        
+        .date-header .separator {
+            color: #ccc;
+            font-weight: normal;
+        }
+        
+        .date-header .lifelog-section {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .date-header .lifelog-section .label {
             font-weight: 500;
             color: #666;
+            font-size: 14px;
         }
 
         .hours-section {
@@ -285,6 +313,43 @@
         .overall-progress h3 {
             margin-bottom: 10px;
             color: #333;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 24px;
+            background: #e0e0e0;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            margin-bottom: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            transition: width 0.3s ease;
+            min-width: 0%;
+            width: 0%;
+        }
+
+        .progress-fill.running {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            animation: progress-pulse 2s ease-in-out infinite;
+        }
+
+        .progress-fill.done {
+            background: #27ae60;
+        }
+
+        @keyframes progress-pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.8;
+            }
         }
 
         .error-message {
@@ -393,12 +458,24 @@
             const start = new Date(startTimeInput.value);
             const end = new Date(endTimeInput.value);
 
+            // Check if dates are valid
+            if (isNaN(start.getTime())) {
+                alert('Invalid start date/time. Please select a valid date and time.');
+                startTimeInput.focus();
+                return;
+            }
+            if (isNaN(end.getTime())) {
+                alert('Invalid end date/time. Please select a valid date and time.');
+                endTimeInput.focus();
+                return;
+            }
+
             if (start >= end) {
                 alert('End time must be after start time (non-inclusive)');
                 return;
             }
             
-            // Validate that minutes are :00 (only full hours allowed)
+            // Validate that minutes are :00 (only full hours allowed, including 00:00)
             const startMinutes = start.getMinutes();
             const endMinutes = end.getMinutes();
             if (startMinutes !== 0) {
@@ -457,7 +534,7 @@
             }
         });
 
-        function initializeProgressTable(hourProgress) {
+        function initializeProgressTable(hourProgress, job) {
             const container = document.getElementById('progressContainer');
             const hours = Object.keys(hourProgress || {}).sort();
             
@@ -490,12 +567,21 @@
                 
                 return `
                     <div class="date-group" data-date="${date}">
-                        <div class="date-header">Date: ${date}</div>
-                        <div class="lifelog-row">
-                            <span class="label">Lifelog:</span>
-                            <span style="margin-right: 8px;">Download</span>
-                            <span class="stage-status" data-date="${date}" data-stage="lifelog">
-                                ${renderStatusIcon(lifelogStatus)}
+                        <div class="date-separator"></div>
+                        <div class="date-header">
+                            <span class="date-label">Date: ${date}</span>
+                            <span class="lifelog-section">
+                                <span class="label">Lifelog:</span>
+                                <span>Download</span>
+                                <span class="stage-status" data-date="${date}" data-stage="lifelog">
+                                    ${renderStatusIcon(lifelogStatus)}
+                                </span>
+                            </span>
+                            <span class="lifelog-section">
+                                <span>Load Elasticsearch</span>
+                                <span class="stage-status" data-date="${date}" data-stage="lifelog-elasticsearch">
+                                    ${renderStatusIcon(job.date_lifelog_elasticsearch && job.date_lifelog_elasticsearch[date] ? job.date_lifelog_elasticsearch[date] : 'pending')}
+                                </span>
                             </span>
                         </div>
                         <div class="hours-section">
@@ -537,7 +623,9 @@
             } else if (status === 'failed') {
                 return '<span class="status-icon failed">✗</span>';
             } else if (status === 'skipped') {
-                return '<span class="status-icon checkmark-skipped">✓</span>';
+                return '<span class="status-icon skipped-text" title="Already in Elasticsearch">⊘</span>';
+            } else if (status === 'not_available') {
+                return '<span class="status-icon not-available">N/A</span>'; // N/A text
             } else {
                 return '<span class="status-icon"></span>'; // pending - blank
             }
@@ -624,17 +712,27 @@
             if (job.hour_progress && Object.keys(job.hour_progress).length > 0) {
                 const container = document.getElementById('progressContainer');
                 if (container.children.length === 0 || container.textContent.includes('Initializing')) {
-                    initializeProgressTable(job.hour_progress);
+                    initializeProgressTable(job.hour_progress, job);
                 }
             }
 
             // Update per-hour progress
             for (const [hour, progress] of Object.entries(job.hour_progress || {})) {
-                updateHourProgress(hour, progress);
+                updateHourProgress(hour, progress, job);
+            }
+            
+            // Update lifelog Elasticsearch status for all dates (per-date, not per-hour)
+            if (job.date_lifelog_elasticsearch) {
+                for (const [date, status] of Object.entries(job.date_lifelog_elasticsearch)) {
+                    const lifelogESStatusEl = document.querySelector(`.stage-status[data-date="${date}"][data-stage="lifelog-elasticsearch"]`);
+                    if (lifelogESStatusEl) {
+                        lifelogESStatusEl.innerHTML = renderStatusIcon(status);
+                    }
+                }
             }
         }
 
-        function updateHourProgress(hour, progress) {
+        function updateHourProgress(hour, progress, job) {
             // Extract date from display_hour for grouping
             const displayHour = (progress && progress.display_hour) ? progress.display_hour : formatHour(hour);
             const [date] = displayHour.split(' ');
@@ -645,12 +743,20 @@
                 lifelogStatusEl.innerHTML = renderStatusIcon(progress.lifelog || 'pending');
             }
             
+            // Update lifelog Elasticsearch status (shared across all hours in the same date)
+            if (job && job.date_lifelog_elasticsearch && job.date_lifelog_elasticsearch[date]) {
+                const lifelogESStatusEl = document.querySelector(`.stage-status[data-date="${date}"][data-stage="lifelog-elasticsearch"]`);
+                if (lifelogESStatusEl) {
+                    lifelogESStatusEl.innerHTML = renderStatusIcon(job.date_lifelog_elasticsearch[date]);
+                }
+            }
+            
             // Update hour-specific stages (audio, diarize, elasticsearch)
             ['audio', 'diarize', 'elasticsearch'].forEach(stage => {
                 const statusEl = document.querySelector(`.stage-status[data-hour="${hour}"][data-stage="${stage}"]`);
                 if (!statusEl) {
                     // Element doesn't exist yet, reinitialize
-                    initializeProgressTable({[hour]: progress});
+                    initializeProgressTable({[hour]: progress}, job);
                     return;
                 }
                 
@@ -797,7 +903,21 @@
         // Add event listeners to validate minutes are always :00
         function validateMinutes(input) {
             input.addEventListener('change', function() {
-                const date = new Date(this.value);
+                if (!this.value) return; // Skip if empty
+                
+                // Parse datetime-local value (format: YYYY-MM-DDTHH:mm)
+                // datetime-local is already in local time, so we need to parse it carefully
+                const dateStr = this.value;
+                const date = new Date(dateStr);
+                
+                // Check if date is valid
+                if (isNaN(date.getTime())) {
+                    // Invalid date - try to fix by ensuring format is correct
+                    console.warn('Invalid date value:', dateStr);
+                    return;
+                }
+                
+                // Check minutes (00:00 is valid, we just need to ensure it's on the hour)
                 if (date.getMinutes() !== 0) {
                     alert('Only full hours are allowed (:00). Minutes will be reset to :00.');
                     // Reset to :00
@@ -808,7 +928,18 @@
             
             // Also validate on blur in case user manually types
             input.addEventListener('blur', function() {
-                const date = new Date(this.value);
+                if (!this.value) return; // Skip if empty
+                
+                const dateStr = this.value;
+                const date = new Date(dateStr);
+                
+                // Check if date is valid
+                if (isNaN(date.getTime())) {
+                    console.warn('Invalid date value:', dateStr);
+                    return;
+                }
+                
+                // Only reset minutes if they're not already 0
                 if (date.getMinutes() !== 0) {
                     date.setMinutes(0);
                     this.value = formatDateTimeLocal(date);

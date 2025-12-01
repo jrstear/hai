@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -14,9 +15,11 @@ import (
 )
 
 const (
-	indexSpeakers   = "speakers"
-	indexRecordings = "recordings"
-	indexSegments   = "segments"
+	indexSpeakers         = "speakers"
+	indexRecordings       = "recordings"
+	indexSegments         = "segments"
+	indexLifelogs         = "lifelogs"
+	indexLifelogBlockquotes = "lifelog_blockquotes"
 )
 
 // ElasticsearchStorage implements the Storage interface using Elasticsearch
@@ -192,6 +195,83 @@ func (s *ElasticsearchStorage) ensureIndices(ctx context.Context) error {
 						},
 						"end_byte_offset": map[string]interface{}{
 							"type": "long",
+						},
+						"created_at": map[string]interface{}{
+							"type": "date",
+						},
+					},
+				},
+				"settings": map[string]interface{}{
+					"number_of_shards":   1,
+					"number_of_replicas": 0,
+				},
+			},
+		},
+		{
+			name: indexLifelogs,
+			mapping: map[string]interface{}{
+				"mappings": map[string]interface{}{
+					"properties": map[string]interface{}{
+						"id": map[string]interface{}{
+							"type": "keyword",
+						},
+						"title": map[string]interface{}{
+							"type": "text",
+						},
+						"markdown": map[string]interface{}{
+							"type": "text",
+						},
+						"start_time": map[string]interface{}{
+							"type": "date",
+						},
+						"end_time": map[string]interface{}{
+							"type": "date",
+						},
+						"created_at": map[string]interface{}{
+							"type": "date",
+						},
+					},
+				},
+				"settings": map[string]interface{}{
+					"number_of_shards":   1,
+					"number_of_replicas": 0,
+				},
+			},
+		},
+		{
+			name: indexLifelogBlockquotes,
+			mapping: map[string]interface{}{
+				"mappings": map[string]interface{}{
+					"properties": map[string]interface{}{
+						"id": map[string]interface{}{
+							"type": "keyword",
+						},
+						"lifelog_id": map[string]interface{}{
+							"type": "keyword",
+						},
+						"recording_id": map[string]interface{}{
+							"type": "keyword",
+						},
+						"content": map[string]interface{}{
+							"type": "text",
+						},
+						"speaker_name": map[string]interface{}{
+							"type": "keyword",
+						},
+						"speaker_id": map[string]interface{}{
+							"type": "keyword",
+						},
+						"start_offset_ms": map[string]interface{}{
+							"type": "integer",
+						},
+						"end_offset_ms": map[string]interface{}{
+							"type": "integer",
+						},
+						"start_time": map[string]interface{}{
+							"type": "date",
+						},
+						"end_time": map[string]interface{}{
+							"type": "date",
 						},
 						"created_at": map[string]interface{}{
 							"type": "date",
@@ -992,6 +1072,405 @@ func (s *ElasticsearchStorage) UpdateSegmentByteOffsets(ctx context.Context, seg
 	return nil
 }
 
+// Lifelog operations
+
+func (s *ElasticsearchStorage) CreateLifelog(ctx context.Context, lifelog *Lifelog) error {
+	// Check if lifelog already exists
+	_, err := s.GetLifelog(ctx, lifelog.ID)
+	if err == nil {
+		return ErrDuplicateKey
+	}
+	if err != ErrNotFound {
+		return err
+	}
+
+	doc := s.lifelogToDoc(lifelog)
+	docJSON, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal lifelog: %w", err)
+	}
+
+	res, err := s.client.Index(
+		indexLifelogs,
+		bytes.NewReader(docJSON),
+		s.client.Index.WithDocumentID(lifelog.ID),
+		s.client.Index.WithContext(ctx),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to index lifelog: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to index lifelog: %s", string(body))
+	}
+
+	return nil
+}
+
+func (s *ElasticsearchStorage) GetLifelog(ctx context.Context, id string) (*Lifelog, error) {
+	res, err := s.client.Get(indexLifelogs, id, s.client.Get.WithContext(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get lifelog: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == 404 {
+		return nil, ErrNotFound
+	}
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("failed to get lifelog: %s", string(body))
+	}
+
+	var result struct {
+		Source map[string]interface{} `json:"_source"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode lifelog: %w", err)
+	}
+
+	return s.docToLifelog(result.Source)
+}
+
+func (s *ElasticsearchStorage) ListLifelogs(ctx context.Context, startTime *time.Time, endTime *time.Time) ([]*Lifelog, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"match_all": map[string]interface{}{},
+		},
+		"size": 10000, // TODO: Implement pagination if needed
+		"sort": []map[string]interface{}{
+			{"start_time": map[string]interface{}{"order": "asc"}},
+		},
+	}
+
+	if startTime != nil || endTime != nil {
+		rangeQuery := map[string]interface{}{}
+		if startTime != nil {
+			rangeQuery["gte"] = startTime.Format(time.RFC3339)
+		}
+		if endTime != nil {
+			rangeQuery["lt"] = endTime.Format(time.RFC3339)
+		}
+		query["query"] = map[string]interface{}{
+			"range": map[string]interface{}{
+				"start_time": rangeQuery,
+			},
+		}
+	}
+
+	queryJSON, err := json.Marshal(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal query: %w", err)
+	}
+
+	res, err := s.client.Search(
+		s.client.Search.WithIndex(indexLifelogs),
+		s.client.Search.WithBody(bytes.NewReader(queryJSON)),
+		s.client.Search.WithContext(ctx),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search lifelogs: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("failed to search lifelogs: %s", string(body))
+	}
+
+	var result struct {
+		Hits struct {
+			Hits []struct {
+				Source map[string]interface{} `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode search results: %w", err)
+	}
+
+	lifelogs := make([]*Lifelog, len(result.Hits.Hits))
+	for i, hit := range result.Hits.Hits {
+		lifelog, err := s.docToLifelog(hit.Source)
+		if err != nil {
+			log.Printf("Warning: failed to parse lifelog from search hit: %v", err)
+			continue
+		}
+		lifelogs[i] = lifelog
+	}
+
+	return lifelogs, nil
+}
+
+func (s *ElasticsearchStorage) UpdateLifelog(ctx context.Context, lifelog *Lifelog) error {
+	// Check if lifelog exists
+	existing, err := s.GetLifelog(ctx, lifelog.ID)
+	if err != nil {
+		return err
+	}
+
+	// Merge updates (only non-zero fields)
+	if lifelog.Title != "" {
+		existing.Title = lifelog.Title
+	}
+	if lifelog.Markdown != "" {
+		existing.Markdown = lifelog.Markdown
+	}
+	if !lifelog.StartTime.IsZero() {
+		existing.StartTime = lifelog.StartTime
+	}
+	if !lifelog.EndTime.IsZero() {
+		existing.EndTime = lifelog.EndTime
+	}
+
+	doc := s.lifelogToDoc(existing)
+	docJSON, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal updated lifelog: %w", err)
+	}
+
+	res, err := s.client.Update(
+		indexLifelogs,
+		lifelog.ID,
+		bytes.NewReader([]byte(fmt.Sprintf(`{"doc":%s}`, docJSON))),
+		s.client.Update.WithContext(ctx),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update lifelog: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to update lifelog: %s", string(body))
+	}
+
+	return nil
+}
+
+func (s *ElasticsearchStorage) CreateLifelogBlockquote(ctx context.Context, blockquote *LifelogBlockquote) error {
+	// Check if blockquote already exists
+	_, err := s.GetLifelogBlockquote(ctx, blockquote.ID)
+	if err == nil {
+		return ErrDuplicateKey
+	}
+	if err != ErrNotFound {
+		return err
+	}
+
+	doc := s.lifelogBlockquoteToDoc(blockquote)
+	docJSON, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal blockquote: %w", err)
+	}
+
+	res, err := s.client.Index(
+		indexLifelogBlockquotes,
+		bytes.NewReader(docJSON),
+		s.client.Index.WithDocumentID(blockquote.ID),
+		s.client.Index.WithContext(ctx),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to index blockquote: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to index blockquote: %s", string(body))
+	}
+
+	return nil
+}
+
+func (s *ElasticsearchStorage) CreateLifelogBlockquotes(ctx context.Context, blockquotes []*LifelogBlockquote) (int, error) {
+	if len(blockquotes) == 0 {
+		return 0, nil
+	}
+
+	// Build bulk request
+	var buf bytes.Buffer
+	for _, blockquote := range blockquotes {
+		// Action line
+		action := map[string]interface{}{
+			"index": map[string]interface{}{
+				"_index": indexLifelogBlockquotes,
+				"_id":    blockquote.ID,
+			},
+		}
+		actionJSON, _ := json.Marshal(action)
+		buf.Write(actionJSON)
+		buf.WriteString("\n")
+
+		// Document line
+		doc := s.lifelogBlockquoteToDoc(blockquote)
+		docJSON, err := json.Marshal(doc)
+		if err != nil {
+			return 0, fmt.Errorf("failed to marshal blockquote: %w", err)
+		}
+		buf.Write(docJSON)
+		buf.WriteString("\n")
+	}
+
+	res, err := s.client.Bulk(bytes.NewReader(buf.Bytes()), s.client.Bulk.WithContext(ctx))
+	if err != nil {
+		return 0, fmt.Errorf("failed to bulk index blockquotes: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return 0, fmt.Errorf("failed to bulk index blockquotes: %s", string(body))
+	}
+
+	// Parse response to count successful inserts
+	var bulkResult struct {
+		Items []struct {
+			Index struct {
+				Status int `json:"status"`
+			} `json:"index"`
+		} `json:"items"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&bulkResult); err != nil {
+		// If we can't parse, assume all succeeded
+		return len(blockquotes), nil
+	}
+
+	successCount := 0
+	for _, item := range bulkResult.Items {
+		if item.Index.Status >= 200 && item.Index.Status < 300 {
+			successCount++
+		}
+	}
+
+	return successCount, nil
+}
+
+func (s *ElasticsearchStorage) GetLifelogBlockquote(ctx context.Context, id string) (*LifelogBlockquote, error) {
+	res, err := s.client.Get(indexLifelogBlockquotes, id, s.client.Get.WithContext(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blockquote: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == 404 {
+		return nil, ErrNotFound
+	}
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("failed to get blockquote: %s", string(body))
+	}
+
+	var result struct {
+		Source map[string]interface{} `json:"_source"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode blockquote: %w", err)
+	}
+
+	return s.docToLifelogBlockquote(result.Source)
+}
+
+func (s *ElasticsearchStorage) GetLifelogBlockquotesByLifelog(ctx context.Context, lifelogID string) ([]*LifelogBlockquote, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"term": map[string]interface{}{
+				"lifelog_id.keyword": lifelogID,
+			},
+		},
+		"size": 10000, // TODO: Implement pagination if needed
+		"sort": []map[string]interface{}{
+			{"start_time": map[string]interface{}{"order": "asc"}},
+		},
+	}
+	return s.searchLifelogBlockquotes(ctx, query)
+}
+
+func (s *ElasticsearchStorage) GetLifelogBlockquotesByTimeRange(ctx context.Context, startTime, endTime time.Time) ([]*LifelogBlockquote, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"range": map[string]interface{}{
+				"start_time": map[string]interface{}{
+					"gte": startTime.Format(time.RFC3339),
+					"lt":  endTime.Format(time.RFC3339),
+				},
+			},
+		},
+		"size": 10000, // TODO: Implement pagination if needed
+		"sort": []map[string]interface{}{
+			{"start_time": map[string]interface{}{"order": "asc"}},
+		},
+	}
+	return s.searchLifelogBlockquotes(ctx, query)
+}
+
+func (s *ElasticsearchStorage) UpdateLifelogBlockquote(ctx context.Context, blockquote *LifelogBlockquote) error {
+	// Check if blockquote exists
+	existing, err := s.GetLifelogBlockquote(ctx, blockquote.ID)
+	if err != nil {
+		return err
+	}
+
+	// Merge updates (only non-zero fields)
+	if blockquote.LifelogID != "" {
+		existing.LifelogID = blockquote.LifelogID
+	}
+	if blockquote.RecordingID != nil {
+		existing.RecordingID = blockquote.RecordingID
+	}
+	if blockquote.Content != "" {
+		existing.Content = blockquote.Content
+	}
+	if blockquote.SpeakerName != "" {
+		existing.SpeakerName = blockquote.SpeakerName
+	}
+	if blockquote.SpeakerID != nil {
+		existing.SpeakerID = blockquote.SpeakerID
+	}
+	if blockquote.StartOffsetMs != 0 {
+		existing.StartOffsetMs = blockquote.StartOffsetMs
+	}
+	if blockquote.EndOffsetMs != 0 {
+		existing.EndOffsetMs = blockquote.EndOffsetMs
+	}
+	if !blockquote.StartTime.IsZero() {
+		existing.StartTime = blockquote.StartTime
+	}
+	if !blockquote.EndTime.IsZero() {
+		existing.EndTime = blockquote.EndTime
+	}
+
+	doc := s.lifelogBlockquoteToDoc(existing)
+	docJSON, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal updated blockquote: %w", err)
+	}
+
+	res, err := s.client.Update(
+		indexLifelogBlockquotes,
+		blockquote.ID,
+		bytes.NewReader([]byte(fmt.Sprintf(`{"doc":%s}`, docJSON))),
+		s.client.Update.WithContext(ctx),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update blockquote: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to update blockquote: %s", string(body))
+	}
+
+	return nil
+}
+
 // Helper functions
 
 func (s *ElasticsearchStorage) searchSegments(ctx context.Context, query map[string]interface{}) ([]*Segment, error) {
@@ -1264,5 +1743,168 @@ func (s *ElasticsearchStorage) docToSegment(doc map[string]interface{}) (*Segmen
 	}
 
 	return segment, nil
+}
+
+func (s *ElasticsearchStorage) searchLifelogBlockquotes(ctx context.Context, query map[string]interface{}) ([]*LifelogBlockquote, error) {
+	queryJSON, err := json.Marshal(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal query: %w", err)
+	}
+
+	res, err := s.client.Search(
+		s.client.Search.WithIndex(indexLifelogBlockquotes),
+		s.client.Search.WithBody(bytes.NewReader(queryJSON)),
+		s.client.Search.WithContext(ctx),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search blockquotes: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("failed to search blockquotes: %s", string(body))
+	}
+
+	var result struct {
+		Hits struct {
+			Hits []struct {
+				Source map[string]interface{} `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode search results: %w", err)
+	}
+
+	blockquotes := make([]*LifelogBlockquote, len(result.Hits.Hits))
+	for i, hit := range result.Hits.Hits {
+		blockquote, err := s.docToLifelogBlockquote(hit.Source)
+		if err != nil {
+			log.Printf("Warning: failed to parse blockquote from search hit: %v", err)
+			continue
+		}
+		blockquotes[i] = blockquote
+	}
+
+	return blockquotes, nil
+}
+
+func (s *ElasticsearchStorage) lifelogToDoc(lifelog *Lifelog) map[string]interface{} {
+	return map[string]interface{}{
+		"id":         lifelog.ID,
+		"title":      lifelog.Title,
+		"markdown":   lifelog.Markdown,
+		"start_time": lifelog.StartTime.Format(time.RFC3339),
+		"end_time":   lifelog.EndTime.Format(time.RFC3339),
+		"created_at": lifelog.CreatedAt.Format(time.RFC3339),
+	}
+}
+
+func (s *ElasticsearchStorage) lifelogBlockquoteToDoc(blockquote *LifelogBlockquote) map[string]interface{} {
+	doc := map[string]interface{}{
+		"id":              blockquote.ID,
+		"lifelog_id":      blockquote.LifelogID,
+		"content":         blockquote.Content,
+		"speaker_name":    blockquote.SpeakerName,
+		"start_offset_ms": blockquote.StartOffsetMs,
+		"end_offset_ms":   blockquote.EndOffsetMs,
+		"start_time":      blockquote.StartTime.Format(time.RFC3339),
+		"end_time":        blockquote.EndTime.Format(time.RFC3339),
+		"created_at":      blockquote.CreatedAt.Format(time.RFC3339),
+	}
+
+	if blockquote.RecordingID != nil {
+		doc["recording_id"] = *blockquote.RecordingID
+	}
+	if blockquote.SpeakerID != nil {
+		doc["speaker_id"] = *blockquote.SpeakerID
+	}
+
+	return doc
+}
+
+func (s *ElasticsearchStorage) docToLifelog(doc map[string]interface{}) (*Lifelog, error) {
+	lifelog := &Lifelog{}
+
+	if id, ok := doc["id"].(string); ok {
+		lifelog.ID = id
+	}
+	if title, ok := doc["title"].(string); ok {
+		lifelog.Title = title
+	}
+	if markdown, ok := doc["markdown"].(string); ok {
+		lifelog.Markdown = markdown
+	}
+
+	// Parse dates
+	if startTime, ok := doc["start_time"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, startTime); err == nil {
+			lifelog.StartTime = t
+		}
+	}
+	if endTime, ok := doc["end_time"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, endTime); err == nil {
+			lifelog.EndTime = t
+		}
+	}
+	if createdAt, ok := doc["created_at"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			lifelog.CreatedAt = t
+		}
+	}
+
+	return lifelog, nil
+}
+
+func (s *ElasticsearchStorage) docToLifelogBlockquote(doc map[string]interface{}) (*LifelogBlockquote, error) {
+	blockquote := &LifelogBlockquote{}
+
+	if id, ok := doc["id"].(string); ok {
+		blockquote.ID = id
+	}
+	if lifelogID, ok := doc["lifelog_id"].(string); ok {
+		blockquote.LifelogID = lifelogID
+	}
+	if content, ok := doc["content"].(string); ok {
+		blockquote.Content = content
+	}
+	if speakerName, ok := doc["speaker_name"].(string); ok {
+		blockquote.SpeakerName = speakerName
+	}
+	if startOffsetMs, ok := doc["start_offset_ms"].(float64); ok {
+		blockquote.StartOffsetMs = int(startOffsetMs)
+	}
+	if endOffsetMs, ok := doc["end_offset_ms"].(float64); ok {
+		blockquote.EndOffsetMs = int(endOffsetMs)
+	}
+
+	// Parse dates
+	if startTime, ok := doc["start_time"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, startTime); err == nil {
+			blockquote.StartTime = t
+		}
+	}
+	if endTime, ok := doc["end_time"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, endTime); err == nil {
+			blockquote.EndTime = t
+		}
+	}
+	if createdAt, ok := doc["created_at"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			blockquote.CreatedAt = t
+		}
+	}
+
+	// Parse optional fields
+	if recordingID, ok := doc["recording_id"].(string); ok {
+		blockquote.RecordingID = &recordingID
+	}
+	if speakerID, ok := doc["speaker_id"].(string); ok {
+		blockquote.SpeakerID = &speakerID
+	}
+
+	return blockquote, nil
 }
 

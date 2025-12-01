@@ -33,6 +33,33 @@ services:
     networks:
       - hai-network
 
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: hai-kibana
+    environment:
+      # Connect to Elasticsearch
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      # Disable security for local development (matches Elasticsearch)
+      - xpack.security.enabled=false
+      # Server settings
+      - SERVER_NAME=kibana
+      - SERVER_HOST=0.0.0.0
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    profiles:
+      - elasticsearch
+    networks:
+      - hai-network
+
 volumes:
   es_data:
     driver: local

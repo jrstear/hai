@@ -100,8 +100,14 @@ func FetchLifelogs(apiKey string, date time.Time, timezone string, outputDir str
 		}
 	}
 
-	// Starting download
-	fmt.Printf("Downloading lifelog.json\n")
+	// Starting download - include date path for clarity
+	relPathForMsg := filepath.Join(
+		dateUTC.Format("2006"),
+		dateUTC.Format("01"),
+		dateUTC.Format("02"),
+		"lifelog.json",
+	)
+	fmt.Printf("Downloading %s\n", relPathForMsg)
 
 	var allLifelogs []Lifelog
 	var cursor *string
@@ -166,4 +172,91 @@ func FetchLifelogs(apiKey string, date time.Time, timezone string, outputDir str
 	}
 
 	return outputPath, false, nil
+}
+
+// ParseLifelogForAudioHours parses a lifelog JSON file and returns the set of hours (in UTC) that have audio
+// Returns:
+//   - hoursWithAudio: map[string]bool where key is "YYYY-MM-DD HH:00" format (UTC)
+//   - hasAudio: true if any hours have audio, false if lifelog is null/empty/no blockquotes
+//   - error: if file cannot be read or parsed
+func ParseLifelogForAudioHours(lifelogPath string, timezone string) (map[string]bool, bool, error) {
+	// Read file
+	data, err := os.ReadFile(lifelogPath)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Handle null case
+	var lifelogs []Lifelog
+	trimmed := string(data)
+	if trimmed == "null\n" || trimmed == "null" || trimmed == "null\r\n" {
+		return make(map[string]bool), false, nil
+	}
+
+	// Parse JSON
+	if err := json.Unmarshal(data, &lifelogs); err != nil {
+		return nil, false, fmt.Errorf("failed to parse lifelog: %w", err)
+	}
+
+	// Handle empty array
+	if len(lifelogs) == 0 {
+		return make(map[string]bool), false, nil
+	}
+
+	// Load timezone for conversion (though we'll work in UTC for hour keys)
+	_, err = time.LoadLocation(timezone)
+	if err != nil {
+		return nil, false, fmt.Errorf("invalid timezone: %w", err)
+	}
+
+	hoursWithAudio := make(map[string]bool)
+	hasAnyAudio := false
+
+	// Process each lifelog
+	for _, lifelog := range lifelogs {
+		// Check if lifelog has any blockquotes
+		hasBlockquotes := false
+		for _, content := range lifelog.Contents {
+			if content.Type == "blockquote" {
+				hasBlockquotes = true
+				break
+			}
+		}
+
+		if !hasBlockquotes {
+			continue // Skip lifelogs without audio
+		}
+
+		hasAnyAudio = true
+
+		// Lifelog times are already parsed as time.Time from JSON
+		// Convert to UTC for hour calculation
+		startUTC := lifelog.StartTime.UTC()
+		endUTC := lifelog.EndTime.UTC()
+
+		// Generate all hours between start and end (inclusive)
+		// Round start time down to the hour
+		startHour := time.Date(
+			startUTC.Year(), startUTC.Month(), startUTC.Day(),
+			startUTC.Hour(), 0, 0, 0,
+			time.UTC,
+		)
+
+		// Round end time down to the hour (inclusive)
+		endHour := time.Date(
+			endUTC.Year(), endUTC.Month(), endUTC.Day(),
+			endUTC.Hour(), 0, 0, 0,
+			time.UTC,
+		)
+
+		// Add all hours from start to end (inclusive)
+		current := startHour
+		for current.Before(endHour) || current.Equal(endHour) {
+			hourKey := current.Format("2006-01-02 15:00")
+			hoursWithAudio[hourKey] = true
+			current = current.Add(1 * time.Hour)
+		}
+	}
+
+	return hoursWithAudio, hasAnyAudio, nil
 }

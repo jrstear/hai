@@ -20,11 +20,12 @@ const (
 type StageStatus string
 
 const (
-	StageStatusPending StageStatus = "pending"
-	StageStatusRunning StageStatus = "running"
-	StageStatusDone    StageStatus = "done"
-	StageStatusFailed  StageStatus = "failed"
-	StageStatusSkipped StageStatus = "skipped" // For stages that are not applicable (e.g., Elasticsearch when not configured)
+	StageStatusPending      StageStatus = "pending"
+	StageStatusRunning      StageStatus = "running"
+	StageStatusDone         StageStatus = "done"
+	StageStatusFailed       StageStatus = "failed"
+	StageStatusSkipped      StageStatus = "skipped"       // For stages that are not applicable (e.g., Elasticsearch when not configured)
+	StageStatusNotAvailable StageStatus = "not_available" // For hours that have no audio (no need to process)
 )
 
 // HourProgress represents progress for a single hour
@@ -64,6 +65,8 @@ type Job struct {
 	HourProgress map[string]*HourProgress `json:"hour_progress"`
 	// Per-date lifelog tracking (keyed by date: "YYYY-MM-DD")
 	DateLifelogDone map[string]bool `json:"-"`
+	// Per-date lifelog Elasticsearch status (keyed by date: "YYYY-MM-DD" in user's timezone)
+	DateLifelogElasticsearch map[string]StageStatus `json:"date_lifelog_elasticsearch"`
 
 	// Cancellation
 	Cancel     chan struct{} `json:"-"` // Channel to signal cancellation

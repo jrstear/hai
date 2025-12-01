@@ -130,3 +130,16 @@ tasks:
     cmds:
       - ./bin/load-es {{.CLI_ARGS}}
 
+  build-map-speakers:
+    desc: Build the map-speakers CLI utility
+    cmds:
+      - go build -o bin/map-speakers ./cmd/map-speakers
+    generates:
+      - bin/map-speakers
+
+  map-speakers:
+    desc: Map lifelog speaker names to global speaker IDs
+    deps: [build-map-speakers]
+    cmds:
+      - ./bin/map-speakers {{.CLI_ARGS}}
+
