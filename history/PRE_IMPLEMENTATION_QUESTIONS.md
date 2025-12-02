@@ -196,3 +196,11 @@ Before starting implementation of the onboarding server, we need to answer sever
 7. 🔲 Create HTML template
 8. 🔲 Test end-to-end flow
 
+
+
+
+
+
+
+
+

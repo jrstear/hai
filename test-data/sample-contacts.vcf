@@ -1,0 +1,32 @@
+BEGIN:VCARD
+VERSION:3.0
+FN:John Doe
+N:Doe;John;;;
+EMAIL;TYPE=INTERNET;TYPE=PREF:john.doe@example.com
+TEL;TYPE=CELL;TYPE=PREF:+1-555-123-4567
+PHOTO;VALUE=URI:https://example.com/photos/john.jpg
+END:VCARD
+
+BEGIN:VCARD
+VERSION:3.0
+FN:Jane Smith
+N:Smith;Jane;Marie;;
+EMAIL;TYPE=INTERNET:jane.smith@example.com
+TEL;TYPE=WORK:+1-555-987-6543
+TEL;TYPE=HOME:+1-555-111-2222
+END:VCARD
+
+BEGIN:VCARD
+VERSION:4.0
+FN:Bob Johnson
+N:Johnson;Bob;Robert;Mr.;
+EMAIL;TYPE=INTERNET;TYPE=WORK:bob.johnson@company.com
+EMAIL;TYPE=INTERNET;TYPE=HOME:bob@personal.com
+TEL;TYPE=CELL:+1-555-555-5555
+NOTE:Software Engineer
+END:VCARD
+
+
+
+
+

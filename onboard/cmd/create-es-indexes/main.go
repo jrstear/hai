@@ -54,3 +54,11 @@ func main() {
 	fmt.Println("\nAll indexes are ready for data.")
 }
 
+
+
+
+
+
+
+
+

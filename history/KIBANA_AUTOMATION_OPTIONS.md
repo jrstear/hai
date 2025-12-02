@@ -356,3 +356,11 @@ func createIndexPattern(client *http.Client, kibanaURL, name, timeField string) 
 
 This gives you automation for the repetitive stuff while keeping flexibility for the complex stuff.
 
+
+
+
+
+
+
+
+

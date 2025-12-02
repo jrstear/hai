@@ -191,3 +191,11 @@ With Kibana (hai-c17), you can:
 - The mapping algorithm implemented and run
 - The `GetLifelogBlockquotesBySpeakerID()` method added (or use Kibana/Elasticsearch directly)
 
+
+
+
+
+
+
+
+

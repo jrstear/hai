@@ -105,3 +105,11 @@
 - Phase 1: Storage (independent)
 - Phase 2: Mapping (depends on Phase 1 + segments)
 
+
+
+
+
+
+
+
+

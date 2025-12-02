@@ -102,3 +102,11 @@ func ExportToElasticsearch(
 - Support for updating existing records
 - Byte offset calculation integration
 
+
+
+
+
+
+
+
+

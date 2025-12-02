@@ -127,3 +127,11 @@ However, we can't fully determine the exact algorithm because:
    - Group segments by speaker continuity
    - Optionally group by topic (future enhancement)
 
+
+
+
+
+
+
+
+

@@ -177,3 +177,11 @@ The current schema works:
 
 **Key insight:** The "chicken-and-egg" problem is solved by always creating speakers. There's no need for "temporary" speakers or pointing segments at embeddings - we just create real speakers immediately, and clustering refines them later.
 
+
+
+
+
+
+
+
+

@@ -189,3 +189,11 @@ if len(matches) > 0 && matches[0].Similarity >= storage.SimilarityThreshold {
 - Future: Speaker embedding quality metrics
 - Future: Speaker embedding clustering/refinement
 
+
+
+
+
+
+
+
+

@@ -88,3 +88,11 @@ CREATE INDEX IF NOT EXISTS idx_speakers_contact ON speakers(contact_id) WHERE co
 -- Find speakers by last seen (for cleanup/archival)
 CREATE INDEX IF NOT EXISTS idx_speakers_last_seen ON speakers(last_seen);
 
+
+
+
+
+
+
+
+

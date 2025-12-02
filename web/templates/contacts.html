@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contacts - Hai</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+    <nav>
+        <a href="/">Home</a>
+        <a href="/contacts">Contacts</a>
+    </nav>
+    <main>
+        <div class="contacts-header-row">
+            <h1 style="margin: 0; flex: 1;">Contacts</h1>
+            <div class="vcard-import-container">
+                <form id="vcard-upload-form" style="margin: 0;">
+                    <input type="file" id="vcard-file" name="vcf" accept=".vcf,.vcard" required style="display: none;">
+                    <div id="drop-zone" style="border: 2px dashed #ccc; border-radius: 4px; padding: 8px 12px; text-align: center; background: #fafafa; transition: all 0.3s; cursor: pointer; font-size: 13px; color: #666;">
+                        Drag vCard here (or press here to select file)
+                    </div>
+                </form>
+                <div id="upload-status" style="margin-top: 4px; font-size: 12px; min-height: 16px;"></div>
+            </div>
+        </div>
+
+        <div class="contacts-speakers-container">
+            <section id="contacts-section" class="contacts-column">
+                <div class="contacts-header">
+                    <h2>Contacts</h2>
+                    <div class="contacts-search">
+                        <input type="text" id="contacts-search" placeholder="Search contacts..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                </div>
+                
+                <div id="contacts-container" class="contacts-list">
+                {{if .Contacts}}
+                    {{range .Contacts}}
+                    {{$name := index . "name"}}
+                    {{$known := index . "known"}}
+                    {{$pictureURL := index . "picture_url"}}
+                    {{$favoriteColor := index . "favorite_color"}}
+                    {{$id := index . "id"}}
+                    <div class="contact-row" data-contact-id="{{$id}}" data-contact-name="{{$name}}" 
+                         {{if $favoriteColor}}data-favorite-color="{{$favoriteColor}}"{{end}}>
+                        <div class="contact-picture">
+                            {{if $pictureURL}}
+                                <img src="{{$pictureURL}}" alt="{{$name}}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                <div class="contact-initials" style="display: none;">{{firstChar $name}}</div>
+                            {{else}}
+                                <div class="contact-initials">{{firstChar $name}}</div>
+                            {{end}}
+                        </div>
+                        <div class="contact-info">
+                            <div class="contact-name">{{$name}}</div>
+                        </div>
+                        <div class="contact-status">
+                            {{if $known}}
+                                <span class="status-icon status-known" title="Known">✓</span>
+                            {{else}}
+                                <span class="status-icon status-unknown" title="Unknown">○</span>
+                            {{end}}
+                        </div>
+                    </div>
+                    {{end}}
+                {{else}}
+                    <div class="contacts-empty">
+                        <p>No contacts found. Upload a vCard file to get started.</p>
+                    </div>
+                {{end}}
+                </div>
+            </section>
+
+            <section id="speakers-section" class="speakers-column">
+                <div class="speakers-header">
+                    <h2>Speakers</h2>
+                    <div class="speakers-search">
+                        <input type="text" id="speakers-search" placeholder="Search speakers..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                </div>
+                
+                <div id="speakers-container" class="speakers-list">
+                {{if .Speakers}}
+                    {{range .Speakers}}
+                    {{$id := index . "id"}}
+                    {{$lastSeen := index . "last_seen"}}
+                    {{$duration := index . "duration"}}
+                    {{$durationDisplay := index . "duration_display"}}
+                    {{$contactID := index . "contact_id"}}
+                    <div class="speaker-row" data-speaker-id="{{$id}}" data-speaker-last-seen="{{$lastSeen}}" data-speaker-duration="{{$duration}}">
+                        <div class="speaker-duration-col">
+                            {{$durationDisplay}}
+                        </div>
+                        <div class="speaker-latest-col">
+                            {{formatDate $lastSeen}}
+                        </div>
+                    </div>
+                    {{end}}
+                {{else}}
+                    <div class="speakers-empty">
+                        <p>No unassociated speakers found.</p>
+                    </div>
+                {{end}}
+                </div>
+            </section>
+        </div>
+
+        <section id="recordings-section" class="recordings-section">
+            <div class="recordings-header">
+                <h2>Recordings</h2>
+                <span id="recordings-count" class="recordings-count">Select a contact or speaker to view their recordings</span>
+            </div>
+            <div id="recordings-container" class="recordings-list">
+                <div class="recordings-empty">
+                    <p>No recordings selected. Click on a contact or speaker to view their recordings.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+    <script src="/static/js/main.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('vcard-upload-form');
+        const fileInput = document.getElementById('vcard-file');
+        const statusDiv = document.getElementById('upload-status');
+        const dropZone = document.getElementById('drop-zone');
+        const contactsSearch = document.getElementById('contacts-search');
+        const contactsContainer = document.getElementById('contacts-container');
+        const contactRows = document.querySelectorAll('.contact-row');
+        const speakersSearch = document.getElementById('speakers-search');
+        const speakerRows = document.querySelectorAll('.speaker-row');
+        
+        // Upload function
+        async function uploadFile(file) {
+            if (!file) {
+                statusDiv.innerHTML = '<span style="color: red;">Please select a file</span>';
+                return;
+            }
+            
+            // Validate file type
+            const validExtensions = ['.vcf', '.vcard'];
+            const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+            if (!validExtensions.includes(fileExtension)) {
+                statusDiv.innerHTML = '<span style="color: red;">Please select a .vcf or .vcard file</span>';
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('vcf', file);
+            
+            statusDiv.innerHTML = '<span style="color: blue;">Uploading...</span>';
+            
+            try {
+                const apiUrl = '{{.APIURL}}';
+                const response = await fetch(apiUrl + '/api/contacts/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = `<span style="color: green;">✓ Imported ${data.imported || 0} contact(s)</span>`;
+                    fileInput.value = ''; // Clear file input
+                    // Reload page after 1 second to show new contacts
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    statusDiv.innerHTML = `<span style="color: red;">Error: ${data.error || 'Upload failed'}</span>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<span style="color: red;">Error: ${error.message}</span>`;
+            }
+        }
+        
+        // Form submission handler
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const file = fileInput.files[0];
+            await uploadFile(file);
+        });
+        
+        // Click handler for drop zone
+        dropZone.addEventListener('click', function(e) {
+            e.preventDefault();
+            fileInput.click();
+        });
+        
+        // File input change handler
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                // Auto-upload when file is selected
+                uploadFile(file);
+            }
+        });
+        
+        // Drag and drop handlers
+        dropZone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.style.borderColor = '#0066cc';
+            dropZone.style.background = '#e6f2ff';
+        });
+        
+        dropZone.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.style.borderColor = '#ccc';
+            dropZone.style.background = '#fafafa';
+        });
+        
+        dropZone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.style.borderColor = '#ccc';
+            dropZone.style.background = '#fafafa';
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const file = files[0];
+                uploadFile(file);
+            }
+        });
+        
+        // Prevent default drag behaviors on the whole page
+        document.addEventListener('dragover', function(e) {
+            e.preventDefault();
+        });
+        
+        document.addEventListener('drop', function(e) {
+            e.preventDefault();
+        });
+        
+        // Contacts search functionality
+        if (contactsSearch) {
+            contactsSearch.addEventListener('input', function(e) {
+                const searchTerm = e.target.value.toLowerCase().trim();
+                contactRows.forEach(function(row) {
+                    const name = row.getAttribute('data-contact-name') || '';
+                    if (name.toLowerCase().includes(searchTerm)) {
+                        row.style.display = 'flex';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            });
+        }
+        
+        // Contact row click handler and color styling
+        contactRows.forEach(function(row) {
+            // Apply favorite color if present
+            const favoriteColor = row.getAttribute('data-favorite-color');
+            if (favoriteColor) {
+                // Convert hex to rgba with 20% opacity
+                const hex = favoriteColor.replace('#', '');
+                const r = parseInt(hex.substr(0, 2), 16);
+                const g = parseInt(hex.substr(2, 2), 16);
+                const b = parseInt(hex.substr(4, 2), 16);
+                row.style.backgroundColor = `rgba(${r}, ${g}, ${b}, 0.2)`;
+            }
+            
+            // Click handler
+            row.addEventListener('click', function() {
+                // Remove previous selection from both contacts and speakers
+                contactRows.forEach(function(r) {
+                    r.classList.remove('selected');
+                });
+                speakerRows.forEach(function(r) {
+                    r.classList.remove('selected');
+                });
+                
+                // Select this row
+                row.classList.add('selected');
+                
+                const contactId = row.getAttribute('data-contact-id');
+                loadContactRecordings(contactId);
+            });
+    });
+    
+    // Speakers search functionality
+    if (speakersSearch) {
+        speakersSearch.addEventListener('input', function(e) {
+            const searchTerm = e.target.value.toLowerCase().trim();
+            speakerRows.forEach(function(row) {
+                const id = row.getAttribute('data-speaker-id') || '';
+                if (id.toLowerCase().includes(searchTerm)) {
+                    row.style.display = 'flex';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+    }
+    
+    // Speaker row click handler
+    speakerRows.forEach(function(row) {
+        row.addEventListener('click', function() {
+            // Remove previous selection from both contacts and speakers
+            contactRows.forEach(function(r) {
+                r.classList.remove('selected');
+            });
+            speakerRows.forEach(function(r) {
+                r.classList.remove('selected');
+            });
+            
+            // Select this row
+            row.classList.add('selected');
+            
+            const speakerId = row.getAttribute('data-speaker-id');
+            loadSpeakerRecordings(speakerId);
+        });
+    });
+    
+    // Function to load recordings for a contact
+    async function loadContactRecordings(contactId) {
+        const recordingsContainer = document.getElementById('recordings-container');
+        recordingsContainer.innerHTML = '<div class="recordings-empty"><p>Loading recordings...</p></div>';
+        
+        try {
+            const apiUrl = '{{.APIURL}}';
+            const response = await fetch(`${apiUrl}/api/contacts/${contactId}/recordings`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch recordings: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            renderRecordings(data.segments || [], data.contact?.name || 'Contact');
+        } catch (error) {
+            console.error('Error loading contact recordings:', error);
+            recordingsContainer.innerHTML = `<div class="recordings-empty"><p style="color: red;">Error loading recordings: ${error.message}</p></div>`;
+        }
+    }
+    
+    // Function to load recordings for a speaker
+    async function loadSpeakerRecordings(speakerId) {
+        const recordingsContainer = document.getElementById('recordings-container');
+        recordingsContainer.innerHTML = '<div class="recordings-empty"><p>Loading recordings...</p></div>';
+        
+        try {
+            const apiUrl = '{{.APIURL}}';
+            const response = await fetch(`${apiUrl}/api/speakers/${speakerId}/recordings`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch recordings: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            renderRecordings(data.segments || [], `Speaker ${speakerId.substring(0, 8)}`);
+        } catch (error) {
+            console.error('Error loading speaker recordings:', error);
+            recordingsContainer.innerHTML = `<div class="recordings-empty"><p style="color: red;">Error loading recordings: ${error.message}</p></div>`;
+        }
+    }
+    
+    // Function to render segments in the recordings table
+    function renderRecordings(segments, sourceName) {
+        const recordingsContainer = document.getElementById('recordings-container');
+        const recordingsCount = document.getElementById('recordings-count');
+        
+        if (segments.length === 0) {
+            recordingsContainer.innerHTML = '<div class="recordings-empty"><p>No recordings found for ' + sourceName + '.</p></div>';
+            recordingsCount.textContent = `No recordings for ${sourceName}`;
+            return;
+        }
+        
+        recordingsCount.textContent = `${segments.length} recording${segments.length !== 1 ? 's' : ''} for ${sourceName}`;
+        
+        let html = '';
+        segments.forEach(function(segment) {
+            const duration = formatDuration(segment.duration);
+            const time = segment.time || 'Unknown';
+            const transcript = segment.transcript || '';
+            const recordingId = segment.recording_id;
+            const startTime = segment.start_time || 0;
+            const endTime = segment.end_time || 0;
+            
+            html += `
+                <div class="recording-row" data-recording-id="${recordingId}" data-start-time="${startTime}" data-end-time="${endTime}">
+                    <div class="recording-play">
+                        <button class="play-button" title="Play recording">▶</button>
+                    </div>
+                    <div class="recording-time">${time}</div>
+                    <div class="recording-duration">${duration}</div>
+                    <div class="recording-transcript">${transcript || '<em>No transcript available</em>'}</div>
+                </div>
+            `;
+        });
+        
+        recordingsContainer.innerHTML = html;
+        
+        // Add click handlers to play buttons
+        recordingsContainer.querySelectorAll('.play-button').forEach(function(button) {
+            button.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const row = button.closest('.recording-row');
+                const recordingId = row.getAttribute('data-recording-id');
+                const startTime = parseFloat(row.getAttribute('data-start-time'));
+                const endTime = parseFloat(row.getAttribute('data-end-time'));
+                
+                playRecording(recordingId, startTime, endTime, button);
+            });
+        });
+    }
+    
+    // Function to format duration (seconds to MM:SS)
+    function formatDuration(seconds) {
+        if (typeof seconds !== 'number') {
+            seconds = parseFloat(seconds) || 0;
+        }
+        const minutes = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${minutes}:${secs.toString().padStart(2, '0')}`;
+    }
+    
+    // Global audio element for playback
+    let currentAudio = null;
+    let currentPlayingButton = null;
+    let currentRecordingKey = null; // Track which recording is playing (recordingId:startTime:endTime)
+    
+    // Function to play a recording
+    async function playRecording(recordingId, startTime, endTime, button) {
+        const recordingKey = `${recordingId}:${startTime}:${endTime}`;
+        
+        // If clicking the same button that's currently playing, pause it
+        if (currentAudio && currentRecordingKey === recordingKey && currentPlayingButton === button) {
+            currentAudio.pause();
+            currentAudio = null;
+            button.textContent = '▶';
+            button.classList.remove('playing');
+            currentPlayingButton = null;
+            currentRecordingKey = null;
+            return;
+        }
+        
+        // Stop any currently playing audio
+        if (currentAudio) {
+            currentAudio.pause();
+            currentAudio = null;
+        }
+        
+        // Reset previous play button
+        if (currentPlayingButton) {
+            currentPlayingButton.textContent = '▶';
+            currentPlayingButton.classList.remove('playing');
+        }
+        
+        try {
+            // Get audio URL info from API
+            const apiUrl = '{{.APIURL}}';
+            const audioInfoResponse = await fetch(`${apiUrl}/api/recordings/${recordingId}/audio?start=${startTime}&end=${endTime}`);
+            
+            if (!audioInfoResponse.ok) {
+                throw new Error(`Failed to get audio info: ${audioInfoResponse.statusText}`);
+            }
+            
+            const audioInfo = await audioInfoResponse.json();
+            
+            // Build proxy URL using web server's Limitless proxy endpoint
+            const proxyUrl = '/api/limitless/audio?' + new URLSearchParams({
+                startMs: audioInfo.start_ms.toString(),
+                endMs: audioInfo.end_ms.toString()
+            }).toString();
+            
+            // Create audio element
+            const audio = new Audio(proxyUrl);
+            currentAudio = audio;
+            currentPlayingButton = button;
+            currentRecordingKey = recordingKey;
+            
+            // Update only the clicked button
+            button.textContent = '⏸';
+            button.classList.add('playing');
+            
+            // Handle audio events
+            audio.addEventListener('ended', function() {
+                if (currentPlayingButton) {
+                    currentPlayingButton.textContent = '▶';
+                    currentPlayingButton.classList.remove('playing');
+                    currentPlayingButton = null;
+                }
+                currentAudio = null;
+                currentRecordingKey = null;
+            });
+            
+            audio.addEventListener('error', function(e) {
+                console.error('Audio playback error:', e);
+                alert('Failed to play audio. Please check that LIMITLESS_API_KEY is set.');
+                if (currentPlayingButton) {
+                    currentPlayingButton.textContent = '▶';
+                    currentPlayingButton.classList.remove('playing');
+                    currentPlayingButton = null;
+                }
+                currentAudio = null;
+                currentRecordingKey = null;
+            });
+            
+            // Play audio
+            await audio.play();
+            
+        } catch (error) {
+            console.error('Error playing recording:', error);
+            alert('Failed to play audio: ' + error.message);
+            if (currentPlayingButton) {
+                currentPlayingButton.textContent = '▶';
+                currentPlayingButton.classList.remove('playing');
+                currentPlayingButton = null;
+            }
+            currentAudio = null;
+            currentRecordingKey = null;
+        }
+    }
+});
+    </script>
+</body>
+</html>

@@ -1,0 +1,188 @@
+version: '3'
+
+vars:
+  BINARY_NAME: hai-api
+  BINARY_PATH: ../bin/{{.BINARY_NAME}}
+  TEST_VCARD_BINARY: test-vcard
+  TEST_VCARD_PATH: ../bin/{{.TEST_VCARD_BINARY}}
+  ES_URL: ${ELASTICSEARCH_URL:-http://localhost:9200}
+  PORT: ${PORT:-8080}
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the API server binary
+    cmds:
+      - go build -o {{.BINARY_PATH}} ./cmd/server
+    generates:
+      - "{{.BINARY_PATH}}"
+
+  build-test-vcard:
+    desc: Build the test-vcard utility
+    cmds:
+      - go build -o {{.TEST_VCARD_PATH}} ./cmd/test-vcard
+    generates:
+      - "{{.TEST_VCARD_PATH}}"
+
+  build-all:
+    desc: Build all binaries
+    deps: [build, build-test-vcard]
+
+  run:
+    desc: Run the API server
+    deps: [build]
+    cmds:
+      - |
+        echo "Starting API server on port {{.PORT}}"
+        echo "Elasticsearch URL: {{.ES_URL}}"
+        {{.BINARY_PATH}} --port {{.PORT}}
+    env:
+      ELASTICSEARCH_URL: "{{.ES_URL}}"
+
+  test:
+    desc: Run Go tests
+    cmds:
+      - go test ./...
+
+  test-vcard:
+    desc: Test vCard import with sample file
+    deps: [build-test-vcard]
+    cmds:
+      - |
+        echo "Testing vCard import..."
+        {{.TEST_VCARD_PATH}} -vcard ../test-data/sample-contacts.vcf -es {{.ES_URL}}
+    env:
+      ELASTICSEARCH_URL: "{{.ES_URL}}"
+
+  test-vcard-custom:
+    desc: 'Test vCard import with custom file (usage: task test-vcard-custom FILE=path/to/file.vcf)'
+    deps: [build-test-vcard]
+    cmds:
+      - |
+        if [ -z "{{.FILE}}" ]; then
+          echo "Error: FILE variable is required"
+          echo "Usage: task test-vcard-custom FILE=path/to/file.vcf"
+          exit 1
+        fi
+        echo "Testing vCard import with {{.FILE}}..."
+        {{.TEST_VCARD_PATH}} -vcard {{.FILE}} -es {{.ES_URL}}
+    env:
+      ELASTICSEARCH_URL: "{{.ES_URL}}"
+
+  lint:
+    desc: Run linter
+    cmds:
+      - golangci-lint run ./... || echo "golangci-lint not installed, skipping"
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - go fmt ./...
+
+  tidy:
+    desc: Tidy Go module dependencies
+    cmds:
+      - go mod tidy
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f {{.BINARY_PATH}}
+      - rm -f {{.TEST_VCARD_PATH}}
+      - rm -f ../bin/manage-indexes
+
+  dev:
+    desc: Run API server in development mode (with auto-reload if available)
+    deps: [build]
+    cmds:
+      - |
+        echo "Starting API server in development mode..."
+        echo "Elasticsearch URL: {{.ES_URL}}"
+        echo "API endpoints: http://localhost:{{.PORT}}/api/*"
+        {{.BINARY_PATH}} --port {{.PORT}}
+    env:
+      ELASTICSEARCH_URL: "{{.ES_URL}}"
+
+  health:
+    desc: Check API server health endpoint
+    cmds:
+      - |
+        curl -s http://localhost:{{.PORT}}/api/health | jq . || curl -s http://localhost:{{.PORT}}/api/health
+
+  list-contacts:
+    desc: List all contacts from API
+    cmds:
+      - |
+        curl -s http://localhost:{{.PORT}}/api/contacts | jq . || curl -s http://localhost:{{.PORT}}/api/contacts
+
+  upload-vcard:
+    desc: 'Upload vCard file to API (usage: task upload-vcard FILE=path/to/file.vcf)'
+    cmds:
+      - |
+        if [ -z "{{.FILE}}" ]; then
+          echo "Error: FILE variable is required"
+          echo "Usage: task upload-vcard FILE=path/to/file.vcf"
+          exit 1
+        fi
+        curl -X POST \
+          -F "vcf=@{{.FILE}}" \
+          http://localhost:{{.PORT}}/api/contacts/upload | jq . || \
+        curl -X POST \
+          -F "vcf=@{{.FILE}}" \
+          http://localhost:{{.PORT}}/api/contacts/upload
+
+  check:
+    desc: Run checks (format, lint, test)
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: test
+
+  setup:
+    desc: Initial setup (download dependencies)
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  build-manage-indexes:
+    desc: Build the manage-indexes utility
+    cmds:
+      - go build -o ../bin/manage-indexes ./cmd/manage-indexes
+    generates:
+      - "../bin/manage-indexes"
+
+  rebuild-contacts-index:
+    desc: Delete and rebuild the contacts index in Elasticsearch
+    deps: [build-manage-indexes]
+    cmds:
+      - |
+        echo "Rebuilding contacts index..."
+        ../bin/manage-indexes -index contacts -action rebuild -es {{.ES_URL}}
+    env:
+      ELASTICSEARCH_URL: "{{.ES_URL}}"
+
+  rebuild-all-indexes:
+    desc: 'Delete and rebuild all indexes in Elasticsearch (contacts, speakers, recordings, etc.) - WARNING: Destructive!'
+    deps: [build-manage-indexes]
+    cmds:
+      - |
+        echo "=========================================="
+        echo "WARNING: This will DELETE ALL DATA in all indexes!"
+        echo "Indexes: contacts, speakers, recordings, segments, lifelogs, lifelog_blockquotes, speaker_embeddings"
+        echo "=========================================="
+        echo ""
+        read -p "Type 'yes' to continue: " confirm
+        if [ "$confirm" != "yes" ]; then
+          echo "Cancelled."
+          exit 1
+        fi
+        echo ""
+        echo "Rebuilding all indexes..."
+        ../bin/manage-indexes -index all -action rebuild -es {{.ES_URL}}
+    env:
+      ELASTICSEARCH_URL: "{{.ES_URL}}"
+

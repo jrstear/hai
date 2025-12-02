@@ -125,3 +125,11 @@ When implementing our own segment grouping (for monolog/conversation detection):
 
 3. **Consider configurable thresholds** for different use cases (e.g., tighter grouping for conversations, looser for monologs)
 
+
+
+
+
+
+
+
+

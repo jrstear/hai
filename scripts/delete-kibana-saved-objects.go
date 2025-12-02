@@ -177,3 +177,11 @@ func indexPatternExists(client *http.Client, kibanaURL, name string) (bool, erro
 	return false, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
 }
 
+
+
+
+
+
+
+
+

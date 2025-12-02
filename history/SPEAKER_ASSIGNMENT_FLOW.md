@@ -159,3 +159,11 @@ for _, cluster := range clusters {
    - Batch: Update all segments after clustering completes
    - Recommendation: Batch (simpler, atomic)
 
+
+
+
+
+
+
+
+

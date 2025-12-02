@@ -138,3 +138,11 @@ Looking at the code in `onboard/internal/fetch/lifelog.go`:
 4. ❓ **UTC boundary behavior unknown** - need to test with spanning conversations
 5. ✅ **Unified schema recommended** - monolog/conversation distinction is semantic, not structural
 
+
+
+
+
+
+
+
+

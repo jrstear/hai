@@ -236,3 +236,11 @@ This document compares lifelog content (from Limitless API) with our existing El
 
 **Best Approach**: Store separately, link via time-based matching. This preserves the strengths of each (embeddings for segments, transcripts for blockquotes) while allowing them to complement each other.
 
+
+
+
+
+
+
+
+

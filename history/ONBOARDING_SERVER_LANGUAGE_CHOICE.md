@@ -303,3 +303,11 @@ The subprocess overhead is minimal compared to diarization time (minutes), and y
 
 This gives you the best of both worlds: Go performance and consistency, with Python doing the heavy ML lifting.
 
+
+
+
+
+
+
+
+

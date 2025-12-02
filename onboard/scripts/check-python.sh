@@ -40,3 +40,11 @@ python -c "import pyannote.audio" 2>/dev/null || {
 
 echo "✅ Python environment is ready"
 
+
+
+
+
+
+
+
+

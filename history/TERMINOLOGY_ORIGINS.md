@@ -119,3 +119,11 @@ This definition aligns with:
 - Our codebase: Inherits "segment" from pyannote.audio
 - Speech processing literature: "Segment" is standard term
 
+
+
+
+
+
+
+
+

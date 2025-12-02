@@ -320,3 +320,11 @@ docker-compose --profile elasticsearch up
 
 **Best approach**: Start with SQLite, add containerized ES as optional component for testing, use managed OpenSearch for production.
 
+
+
+
+
+
+
+
+

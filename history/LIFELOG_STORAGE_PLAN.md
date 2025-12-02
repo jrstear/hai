@@ -266,3 +266,11 @@ for _, blockquote := range results {
 4. **Should speaker name mapping be automatic or manual?**
    - **Recommendation**: Automatic with manual override capability
 
+
+
+
+
+
+
+
+

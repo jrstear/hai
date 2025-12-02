@@ -176,3 +176,11 @@ if len(matches) > 0 && matches[0].Similarity >= storage.SimilarityThreshold {
 - Assign to segments immediately
 - Update SpeakerEmbedding.SpeakerID to point to centroid
 
+
+
+
+
+
+
+
+

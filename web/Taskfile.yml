@@ -1,0 +1,118 @@
+version: '3'
+
+vars:
+  BINARY_NAME: hai-web
+  BINARY_PATH: ../bin/{{.BINARY_NAME}}
+  API_URL: ${API_URL:-http://localhost:8080}
+  PORT: ${PORT:-3030}
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the web server binary
+    cmds:
+      - go build -o {{.BINARY_PATH}} ./cmd/server
+    generates:
+      - "{{.BINARY_PATH}}"
+
+  run:
+    desc: Run the web server and open in Chrome
+    deps: [build]
+    cmds:
+      - |
+        export PORT="{{.PORT}}"
+        export API_URL="{{.API_URL}}"
+        ./scripts/run-and-open.sh {{.BINARY_PATH}}
+
+  dev:
+    desc: Run the web server in development mode (with auto-reload if air is installed)
+    cmds:
+      - |
+        if command -v air > /dev/null; then
+          echo "Starting with air (auto-reload)..."
+          air -c .air.toml || go run cmd/server/main.go --port {{.PORT}} --api-url {{.API_URL}}
+        else
+          echo "Starting without auto-reload (install air for auto-reload: go install github.com/cosmtrek/air@latest)"
+          go run cmd/server/main.go --port {{.PORT}} --api-url {{.API_URL}}
+        fi
+    env:
+      API_URL: "{{.API_URL}}"
+
+  test:
+    desc: Run Go tests
+    cmds:
+      - go test ./...
+
+  lint:
+    desc: Run linter
+    cmds:
+      - golangci-lint run ./... || echo "golangci-lint not installed, skipping"
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - go fmt ./...
+
+  tidy:
+    desc: Tidy Go module dependencies
+    cmds:
+      - go mod tidy
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f {{.BINARY_PATH}}
+      - rm -f coverage.out coverage.html
+
+  install:
+    desc: Install binary to $GOPATH/bin
+    cmds:
+      - go install ./cmd/server
+
+  deps:
+    desc: Download Go dependencies
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  deps-update:
+    desc: Update all Go dependencies
+    cmds:
+      - go get -u ./...
+      - go mod tidy
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  check:
+    desc: Run all checks (fmt, vet, test)
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: test
+
+  setup:
+    desc: Initial setup (download dependencies)
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  health:
+    desc: Check if web server is responding
+    cmds:
+      - |
+        curl -s http://localhost:{{.PORT}}/ | head -20 || echo "Web server not responding on port {{.PORT}}"
+
+  test-api-connection:
+    desc: Test connection to API server
+    cmds:
+      - |
+        echo "Testing API server connection..."
+        curl -s {{.API_URL}}/api/health | jq . || curl -s {{.API_URL}}/api/health || echo "API server not responding at {{.API_URL}}"
+

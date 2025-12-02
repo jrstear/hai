@@ -110,3 +110,11 @@ for localSpeakerID, embedding := range result.SpeakerEmbeddings {
 
 This is why we need cosine similarity: to bridge the gap between per-recording local IDs and cross-recording global identities.
 
+
+
+
+
+
+
+
+

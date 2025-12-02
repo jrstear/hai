@@ -91,3 +91,11 @@ POST /speakers/_search
 4. **Flexibility**: Easy to add new fields without migrations
 5. **Analytics**: Built-in aggregations for complex queries
 
+
+
+
+
+
+
+
+
