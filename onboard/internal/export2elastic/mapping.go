@@ -57,7 +57,8 @@ func (e *Exporter) MapSpeakerNames(ctx context.Context, blockquotes []*storage.L
 
 		// Apply match if above threshold
 		if bestMatch != nil && bestOverlap >= MinOverlapThreshold {
-			blockquote.SpeakerID = &bestMatch.SpeakerID
+			// Use SpeakerID directly (it's already a pointer, can be nil if no match)
+			blockquote.SpeakerID = bestMatch.SpeakerID
 			blockquote.RecordingID = &bestMatch.RecordingID
 
 			// Update in storage
@@ -68,8 +69,12 @@ func (e *Exporter) MapSpeakerNames(ctx context.Context, blockquotes []*storage.L
 			}
 
 			stats.matched++
+			speakerIDStr := "nil"
+			if bestMatch.SpeakerID != nil {
+				speakerIDStr = *bestMatch.SpeakerID
+			}
 			log.Printf("Mapped blockquote %s (speaker: %s) to speaker ID %s (overlap: %.2f%%)",
-				blockquote.ID, blockquote.SpeakerName, bestMatch.SpeakerID, bestOverlap*100)
+				blockquote.ID, blockquote.SpeakerName, speakerIDStr, bestOverlap*100)
 		} else {
 			stats.unmatched++
 			if bestMatch != nil {

@@ -15,11 +15,12 @@ import (
 )
 
 const (
-	indexSpeakers         = "speakers"
-	indexRecordings       = "recordings"
-	indexSegments         = "segments"
-	indexLifelogs         = "lifelogs"
+	indexSpeakers          = "speakers"
+	indexRecordings        = "recordings"
+	indexSegments          = "segments"
+	indexLifelogs          = "lifelogs"
 	indexLifelogBlockquotes = "lifelog_blockquotes"
+	indexSpeakerEmbeddings = "speaker_embeddings"
 )
 
 // ElasticsearchStorage implements the Storage interface using Elasticsearch
@@ -172,6 +173,9 @@ func (s *ElasticsearchStorage) ensureIndices(ctx context.Context) error {
 						"id": map[string]interface{}{
 							"type": "keyword",
 						},
+						"speaker_embedding_id": map[string]interface{}{
+							"type": "keyword",
+						},
 						"speaker_id": map[string]interface{}{
 							"type": "keyword",
 						},
@@ -272,6 +276,43 @@ func (s *ElasticsearchStorage) ensureIndices(ctx context.Context) error {
 						},
 						"end_time": map[string]interface{}{
 							"type": "date",
+						},
+						"created_at": map[string]interface{}{
+							"type": "date",
+						},
+					},
+				},
+				"settings": map[string]interface{}{
+					"number_of_shards":   1,
+					"number_of_replicas": 0,
+				},
+			},
+		},
+		{
+			name: indexSpeakerEmbeddings,
+			mapping: map[string]interface{}{
+				"mappings": map[string]interface{}{
+					"properties": map[string]interface{}{
+						"id": map[string]interface{}{
+							"type": "keyword",
+						},
+						"speaker_id": map[string]interface{}{
+							"type": "keyword",
+						},
+						"recording_id": map[string]interface{}{
+							"type": "keyword",
+						},
+						"local_speaker_id": map[string]interface{}{
+							"type": "keyword",
+						},
+						"embedding": map[string]interface{}{
+							"type":     "dense_vector",
+							"dims":     256,
+							"index":    true,
+							"similarity": "cosine",
+						},
+						"duration_seconds": map[string]interface{}{
+							"type": "float",
 						},
 						"created_at": map[string]interface{}{
 							"type": "date",
@@ -391,7 +432,7 @@ func (s *ElasticsearchStorage) GetSpeaker(ctx context.Context, id string) (*Spea
 	return s.docToSpeaker(result.Source)
 }
 
-func (s *ElasticsearchStorage) FindSimilarSpeakers(ctx context.Context, embedding []float32, threshold float64, limit int) ([]SpeakerMatch, error) {
+func (s *ElasticsearchStorage) FindSimilarSpeakers(ctx context.Context, embedding []float32, threshold float64, limit int, onlyCentroids bool) ([]SpeakerMatch, error) {
 	if err := ValidateEmbedding(embedding); err != nil {
 		return nil, err
 	}
@@ -403,18 +444,22 @@ func (s *ElasticsearchStorage) FindSimilarSpeakers(ctx context.Context, embeddin
 	}
 
 	// Build kNN query
+	// Note: min_score doesn't work reliably with kNN queries in Elasticsearch
+	// Instead, we fetch more candidates and filter by threshold in application code
 	query := map[string]interface{}{
 		"knn": map[string]interface{}{
 			"field":         "embedding",
 			"query_vector":  embedding64,
-			"k":             100, // Get more candidates, filter by threshold
+			"k":             100, // Get more candidates, filter by threshold in code
 			"num_candidates": 100,
 		},
-		"min_score": threshold,
 	}
 
+	// Set size to get enough results to filter (or use limit if specified)
 	if limit > 0 {
 		query["size"] = limit
+	} else {
+		query["size"] = 100 // Get enough results to filter by threshold
 	}
 
 	queryJSON, err := json.Marshal(query)
@@ -457,10 +502,16 @@ func (s *ElasticsearchStorage) FindSimilarSpeakers(ctx context.Context, embeddin
 			continue // Skip invalid documents
 		}
 
-		// Elasticsearch returns similarity as _score (1.0 = identical, 0.0 = different)
-		// For cosine similarity, score is already normalized
+		// Elasticsearch returns similarity as _score
+		// For cosine similarity with dense_vector, the score is the cosine similarity
+		// Range: -1.0 to 1.0, but typically 0.0 to 1.0 for normalized vectors
+		// However, Elasticsearch may return scores in a different range
+		// We'll use the score as-is and let the caller filter by threshold
 		similarity := hit.Score
-		if similarity >= threshold {
+		
+		// Only filter by threshold if threshold > 0 (caller wants filtering)
+		// If threshold is 0, return all matches for caller to filter
+		if threshold <= 0 || similarity >= threshold {
 			matches = append(matches, SpeakerMatch{
 				Speaker:    speaker,
 				Similarity: similarity,
@@ -1575,7 +1626,6 @@ func (s *ElasticsearchStorage) recordingToDoc(recording *Recording) map[string]i
 func (s *ElasticsearchStorage) segmentToDoc(segment *Segment) map[string]interface{} {
 	doc := map[string]interface{}{
 		"id":          strconv.FormatInt(segment.ID, 10),
-		"speaker_id":  segment.SpeakerID,
 		"recording_id": segment.RecordingID,
 		"start_time":  segment.StartTime,
 		"end_time":    segment.EndTime,
@@ -1583,6 +1633,13 @@ func (s *ElasticsearchStorage) segmentToDoc(segment *Segment) map[string]interfa
 		"created_at":  segment.CreatedAt.Format(time.RFC3339),
 	}
 
+	// Optional fields
+	if segment.SpeakerEmbeddingID != nil {
+		doc["speaker_embedding_id"] = *segment.SpeakerEmbeddingID
+	}
+	if segment.SpeakerID != nil {
+		doc["speaker_id"] = *segment.SpeakerID
+	}
 	if segment.LocalSpeakerID != nil {
 		doc["local_speaker_id"] = *segment.LocalSpeakerID
 	}
@@ -1706,8 +1763,12 @@ func (s *ElasticsearchStorage) docToSegment(doc map[string]interface{}) (*Segmen
 		}
 	}
 
+	// Parse optional speaker fields
+	if speakerEmbeddingID, ok := doc["speaker_embedding_id"].(string); ok {
+		segment.SpeakerEmbeddingID = &speakerEmbeddingID
+	}
 	if speakerID, ok := doc["speaker_id"].(string); ok {
-		segment.SpeakerID = speakerID
+		segment.SpeakerID = &speakerID
 	}
 	if recordingID, ok := doc["recording_id"].(string); ok {
 		segment.RecordingID = recordingID
@@ -1906,5 +1967,338 @@ func (s *ElasticsearchStorage) docToLifelogBlockquote(doc map[string]interface{}
 	}
 
 	return blockquote, nil
+}
+
+// Additional segment methods
+
+func (s *ElasticsearchStorage) GetSegmentsBySpeakerEmbedding(ctx context.Context, embeddingID string) ([]*Segment, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"term": map[string]interface{}{
+				"speaker_embedding_id": embeddingID,
+			},
+		},
+		"size": 10000, // TODO: Implement pagination if needed
+		"sort": []map[string]interface{}{
+			{"start_time": map[string]interface{}{"order": "asc"}},
+		},
+	}
+
+	return s.searchSegments(ctx, query)
+}
+
+func (s *ElasticsearchStorage) GetSegmentsWithoutEmbeddings(ctx context.Context) ([]*Segment, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must_not": map[string]interface{}{
+					"exists": map[string]interface{}{
+						"field": "speaker_embedding_id",
+					},
+				},
+			},
+		},
+		"size": 10000, // TODO: Implement pagination if needed
+		"sort": []map[string]interface{}{
+			{"start_time": map[string]interface{}{"order": "asc"}},
+		},
+	}
+
+	return s.searchSegments(ctx, query)
+}
+
+func (s *ElasticsearchStorage) UpdateSegment(ctx context.Context, segment *Segment) error {
+	// Check if segment exists
+	_, err := s.GetSegment(ctx, segment.ID)
+	if err != nil {
+		return err
+	}
+
+	doc := s.segmentToDoc(segment)
+	docJSON, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal segment: %w", err)
+	}
+
+	segmentID := strconv.FormatInt(segment.ID, 10)
+	res, err := s.client.Update(
+		indexSegments,
+		segmentID,
+		bytes.NewReader([]byte(fmt.Sprintf(`{"doc":%s}`, string(docJSON)))),
+		s.client.Update.WithContext(ctx),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update segment: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to update segment: %s", string(body))
+	}
+
+	return nil
+}
+
+// SpeakerEmbedding operations
+
+func (s *ElasticsearchStorage) CreateSpeakerEmbedding(ctx context.Context, embedding *SpeakerEmbedding) error {
+	if err := ValidateEmbedding(embedding.Embedding); err != nil {
+		return err
+	}
+
+	// Check if embedding already exists
+	_, err := s.GetSpeakerEmbedding(ctx, embedding.ID)
+	if err == nil {
+		return ErrDuplicateKey
+	}
+	if err != ErrNotFound {
+		return err
+	}
+
+	doc := s.speakerEmbeddingToDoc(embedding)
+	docJSON, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal speaker embedding: %w", err)
+	}
+
+	res, err := s.client.Index(
+		indexSpeakerEmbeddings,
+		bytes.NewReader(docJSON),
+		s.client.Index.WithDocumentID(embedding.ID),
+		s.client.Index.WithContext(ctx),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to index speaker embedding: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to index speaker embedding: %s", string(body))
+	}
+
+	return nil
+}
+
+func (s *ElasticsearchStorage) GetSpeakerEmbedding(ctx context.Context, id string) (*SpeakerEmbedding, error) {
+	res, err := s.client.Get(indexSpeakerEmbeddings, id, s.client.Get.WithContext(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get speaker embedding: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == 404 {
+		return nil, ErrNotFound
+	}
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("failed to get speaker embedding: %s", string(body))
+	}
+
+	var result struct {
+		Source map[string]interface{} `json:"_source"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode speaker embedding: %w", err)
+	}
+
+	return s.docToSpeakerEmbedding(result.Source)
+}
+
+func (s *ElasticsearchStorage) ListUnclusteredEmbeddings(ctx context.Context) ([]*SpeakerEmbedding, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must_not": map[string]interface{}{
+					"exists": map[string]interface{}{
+						"field": "speaker_id",
+					},
+				},
+			},
+		},
+		"size": 10000, // TODO: Implement pagination if needed
+		"sort": []map[string]interface{}{
+			{"created_at": map[string]interface{}{"order": "asc"}},
+		},
+	}
+
+	return s.searchSpeakerEmbeddings(ctx, query)
+}
+
+func (s *ElasticsearchStorage) ListAllEmbeddings(ctx context.Context, speakerID *string) ([]*SpeakerEmbedding, error) {
+	var query map[string]interface{}
+
+	if speakerID != nil {
+		query = map[string]interface{}{
+			"query": map[string]interface{}{
+				"term": map[string]interface{}{
+					"speaker_id": *speakerID,
+				},
+			},
+			"size": 10000,
+			"sort": []map[string]interface{}{
+				{"created_at": map[string]interface{}{"order": "asc"}},
+			},
+		}
+	} else {
+		query = map[string]interface{}{
+			"query": map[string]interface{}{
+				"match_all": map[string]interface{}{},
+			},
+			"size": 10000,
+			"sort": []map[string]interface{}{
+				{"created_at": map[string]interface{}{"order": "asc"}},
+			},
+		}
+	}
+
+	return s.searchSpeakerEmbeddings(ctx, query)
+}
+
+func (s *ElasticsearchStorage) UpdateSpeakerEmbedding(ctx context.Context, embedding *SpeakerEmbedding) error {
+	// Check if embedding exists
+	_, err := s.GetSpeakerEmbedding(ctx, embedding.ID)
+	if err != nil {
+		return err
+	}
+
+	doc := s.speakerEmbeddingToDoc(embedding)
+	docJSON, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal speaker embedding: %w", err)
+	}
+
+	res, err := s.client.Update(
+		indexSpeakerEmbeddings,
+		embedding.ID,
+		bytes.NewReader([]byte(fmt.Sprintf(`{"doc":%s}`, string(docJSON)))),
+		s.client.Update.WithContext(ctx),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update speaker embedding: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to update speaker embedding: %s", string(body))
+	}
+
+	return nil
+}
+
+// Helper functions for SpeakerEmbedding
+
+func (s *ElasticsearchStorage) speakerEmbeddingToDoc(embedding *SpeakerEmbedding) map[string]interface{} {
+	// Convert float32 to float64 for Elasticsearch
+	embedding64 := make([]float64, len(embedding.Embedding))
+	for i, v := range embedding.Embedding {
+		embedding64[i] = float64(v)
+	}
+
+	doc := map[string]interface{}{
+		"id":               embedding.ID,
+		"recording_id":     embedding.RecordingID,
+		"local_speaker_id": embedding.LocalSpeakerID,
+		"embedding":        embedding64,
+		"duration_seconds": embedding.DurationSeconds,
+		"created_at":       embedding.CreatedAt.Format(time.RFC3339),
+	}
+
+	if embedding.SpeakerID != nil {
+		doc["speaker_id"] = *embedding.SpeakerID
+	}
+
+	return doc
+}
+
+func (s *ElasticsearchStorage) docToSpeakerEmbedding(doc map[string]interface{}) (*SpeakerEmbedding, error) {
+	embedding := &SpeakerEmbedding{}
+
+	if id, ok := doc["id"].(string); ok {
+		embedding.ID = id
+	}
+	if recordingID, ok := doc["recording_id"].(string); ok {
+		embedding.RecordingID = recordingID
+	}
+	if localSpeakerID, ok := doc["local_speaker_id"].(string); ok {
+		embedding.LocalSpeakerID = localSpeakerID
+	}
+	if durationSeconds, ok := doc["duration_seconds"].(float64); ok {
+		embedding.DurationSeconds = durationSeconds
+	}
+
+	// Parse embedding (float64[] -> float32[])
+	if embeddingData, ok := doc["embedding"].([]interface{}); ok {
+		embedding.Embedding = make([]float32, len(embeddingData))
+		for i, v := range embeddingData {
+			if f, ok := v.(float64); ok {
+				embedding.Embedding[i] = float32(f)
+			}
+		}
+	}
+
+	// Parse dates
+	if createdAt, ok := doc["created_at"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			embedding.CreatedAt = t
+		}
+	}
+
+	// Parse optional fields
+	if speakerID, ok := doc["speaker_id"].(string); ok {
+		embedding.SpeakerID = &speakerID
+	}
+
+	return embedding, nil
+}
+
+func (s *ElasticsearchStorage) searchSpeakerEmbeddings(ctx context.Context, query map[string]interface{}) ([]*SpeakerEmbedding, error) {
+	queryJSON, err := json.Marshal(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal query: %w", err)
+	}
+
+	res, err := s.client.Search(
+		s.client.Search.WithIndex(indexSpeakerEmbeddings),
+		s.client.Search.WithBody(bytes.NewReader(queryJSON)),
+		s.client.Search.WithContext(ctx),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search speaker embeddings: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("failed to search speaker embeddings: %s", string(body))
+	}
+
+	var result struct {
+		Hits struct {
+			Hits []struct {
+				Source map[string]interface{} `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode search results: %w", err)
+	}
+
+	embeddings := make([]*SpeakerEmbedding, 0, len(result.Hits.Hits))
+	for _, hit := range result.Hits.Hits {
+		embedding, err := s.docToSpeakerEmbedding(hit.Source)
+		if err != nil {
+			log.Printf("Warning: failed to parse speaker embedding from search hit: %v", err)
+			continue
+		}
+		embeddings = append(embeddings, embedding)
+	}
+
+	return embeddings, nil
 }
 

@@ -130,16 +130,81 @@ tasks:
     cmds:
       - ./bin/load-es {{.CLI_ARGS}}
 
-  build-map-speakers:
-    desc: Build the map-speakers CLI utility
+  build-match-blockquotes-to-segments:
+    desc: Build the match-blockquotes-to-segments CLI utility
     cmds:
-      - go build -o bin/map-speakers ./cmd/map-speakers
+      - go build -o bin/match-blockquotes-to-segments ./cmd/match-blockquotes-to-segments
     generates:
-      - bin/map-speakers
+      - bin/match-blockquotes-to-segments
 
-  map-speakers:
-    desc: Map lifelog speaker names to global speaker IDs
-    deps: [build-map-speakers]
+  match-blockquotes-to-segments:
+    desc: Match lifelog blockquotes to segments based on time overlap
+    deps: [build-match-blockquotes-to-segments]
     cmds:
-      - ./bin/map-speakers {{.CLI_ARGS}}
+      - ./bin/match-blockquotes-to-segments {{.CLI_ARGS}}
+
+  build-delete-es-indexes:
+    desc: Build the delete-es-indexes CLI utility
+    cmds:
+      - go build -o bin/delete-es-indexes ./cmd/delete-es-indexes
+    generates:
+      - bin/delete-es-indexes
+
+  delete-es-indexes:
+    desc: Delete Elasticsearch indexes (requires -confirm flag)
+    deps: [build-delete-es-indexes]
+    cmds:
+      - ./bin/delete-es-indexes {{.CLI_ARGS}}
+
+  build-delete-recording-data:
+    desc: Build the delete-recording-data CLI utility
+    cmds:
+      - go build -o bin/delete-recording-data ./cmd/delete-recording-data
+    generates:
+      - bin/delete-recording-data
+
+  delete-recording-data:
+    desc: Delete segments, embeddings, and recording for a specific recording ID
+    deps: [build-delete-recording-data]
+    cmds:
+      - ./bin/delete-recording-data {{.CLI_ARGS}}
+
+  build-delete-by-date-range:
+    desc: Build the delete-by-date-range CLI utility
+    cmds:
+      - go build -o bin/delete-by-date-range ./cmd/delete-by-date-range
+    generates:
+      - bin/delete-by-date-range
+
+  delete-by-date-range:
+    desc: Delete recordings, segments, and embeddings for a date range (YYYY-MM-DD)
+    deps: [build-delete-by-date-range]
+    cmds:
+      - ./bin/delete-by-date-range {{.CLI_ARGS}}
+
+  build-create-es-indexes:
+    desc: Build the create-es-indexes CLI utility
+    cmds:
+      - go build -o bin/create-es-indexes ./cmd/create-es-indexes
+    generates:
+      - bin/create-es-indexes
+
+  create-es-indexes:
+    desc: Create Elasticsearch indexes with updated schema
+    deps: [build-create-es-indexes]
+    cmds:
+      - ./bin/create-es-indexes {{.CLI_ARGS}}
+
+  build-create-speakers:
+    desc: Build the create-speakers CLI utility
+    cmds:
+      - go build -o bin/create-speakers ./cmd/create-speakers
+    generates:
+      - bin/create-speakers
+
+  create-speakers:
+    desc: Run speaker clustering to create/update speakers from embeddings
+    deps: [build-create-speakers]
+    cmds:
+      - ./bin/create-speakers {{.CLI_ARGS}}
 

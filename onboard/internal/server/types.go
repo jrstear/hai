@@ -33,11 +33,11 @@ type HourProgress struct {
 	Hour                  string      `json:"hour"`                   // YYYY-MM-DD HH:00 format (UTC, for internal tracking)
 	DisplayHour           string      `json:"display_hour"`           // YYYY-MM-DD HH:00 format (user's timezone, for UI display)
 	Date                  string      `json:"date"`                   // YYYY-MM-DD (for grouping, UTC)
-	Lifelog               StageStatus `json:"lifelog"`                // Status: pending, running, done, failed (per-date)
+	Lifelog               StageStatus `json:"lifelog"`                // Status: pending, running, done, failed, skipped (per-date)
 	LifelogProgress       int         `json:"lifelog_progress"`       // 0-100
-	Audio                 StageStatus `json:"audio"`                  // Status: pending, running, done, failed
+	Audio                 StageStatus `json:"audio"`                  // Status: pending, running, done, failed, skipped
 	AudioProgress         int         `json:"audio_progress"`         // 0-100
-	Diarize               StageStatus `json:"diarize"`                // Status: pending, running, done, failed
+	Diarize               StageStatus `json:"diarize"`                // Status: pending, running, done, failed, skipped
 	DiarizeProgress       int         `json:"diarize_progress"`       // 0-100
 	Elasticsearch         StageStatus `json:"elasticsearch"`          // Status: pending, running, done, failed, skipped
 	ElasticsearchProgress int         `json:"elasticsearch_progress"` // 0-100

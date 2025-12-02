@@ -623,7 +623,7 @@
             } else if (status === 'failed') {
                 return '<span class="status-icon failed">✗</span>';
             } else if (status === 'skipped') {
-                return '<span class="status-icon skipped-text" title="Already in Elasticsearch">⊘</span>';
+                return '<span class="status-icon skipped-text" title="Already exists (skipped)">⊘</span>';
             } else if (status === 'not_available') {
                 return '<span class="status-icon not-available">N/A</span>'; // N/A text
             } else {
@@ -651,7 +651,9 @@
                 updateProgress(job);
 
                 // Continue polling if not completed, failed, or cancelled
-                if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+                // Also check if progress is 100% - if so, treat as completed even if status isn't set yet
+                if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled' || 
+                    (job.progress === 100 && job.status === 'processing')) {
                     if (pollInterval) {
                         clearInterval(pollInterval);
                     }

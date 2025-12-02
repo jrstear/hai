@@ -50,6 +50,7 @@ var indexPatterns = []IndexPatternConfig{
 	{Name: "speakers", TimeField: "created_at"},
 	{Name: "recordings", TimeField: "start_time"},
 	{Name: "segments", TimeField: "created_at"},
+	{Name: "speaker_embeddings", TimeField: "created_at"},
 	{Name: "lifelogs", TimeField: "start_time"},
 	{Name: "lifelog_blockquotes", TimeField: "start_time"},
 }

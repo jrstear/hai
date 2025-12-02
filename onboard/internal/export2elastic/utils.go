@@ -16,6 +16,13 @@ func generateSpeakerID() string {
 	return fmt.Sprintf("spkr_%s", id[:8])
 }
 
+// generateSpeakerEmbeddingID generates a new speaker embedding ID in the format emb_xxxxx
+func generateSpeakerEmbeddingID() string {
+	id := uuid.New().String()
+	// Use first 8 characters of UUID for shorter ID
+	return fmt.Sprintf("emb_%s", id[:8])
+}
+
 // generateRecordingID generates a recording ID from start time
 // Format: rec_YYYY_MM_DD_HH
 func generateRecordingID(startTime time.Time) string {

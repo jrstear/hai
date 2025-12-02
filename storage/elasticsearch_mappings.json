@@ -72,6 +72,9 @@
           "id": {
             "type": "keyword"
           },
+          "speaker_embedding_id": {
+            "type": "keyword"
+          },
           "speaker_id": {
             "type": "keyword"
           },
@@ -95,6 +98,34 @@
           },
           "end_byte_offset": {
             "type": "long"
+          },
+          "created_at": {
+            "type": "date"
+          }
+        }
+      },
+      "speaker_embeddings": {
+        "properties": {
+          "id": {
+            "type": "keyword"
+          },
+          "speaker_id": {
+            "type": "keyword"
+          },
+          "recording_id": {
+            "type": "keyword"
+          },
+          "local_speaker_id": {
+            "type": "keyword"
+          },
+          "embedding": {
+            "type": "dense_vector",
+            "dims": 256,
+            "index": true,
+            "similarity": "cosine"
+          },
+          "duration_seconds": {
+            "type": "float"
           },
           "created_at": {
             "type": "date"

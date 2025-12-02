@@ -23,3 +23,16 @@ tasks:
     cmds:
       - ./bin/setup-kibana-index-patterns {{.CLI_ARGS}}
 
+  build-delete-kibana-saved-objects:
+    desc: Build the delete-kibana-saved-objects script
+    cmds:
+      - go build -o bin/delete-kibana-saved-objects scripts/delete-kibana-saved-objects.go
+    generates:
+      - bin/delete-kibana-saved-objects
+
+  delete-kibana-saved-objects:
+    desc: Delete Kibana saved objects (index patterns) - requires -confirm flag
+    deps: [build-delete-kibana-saved-objects]
+    cmds:
+      - ./bin/delete-kibana-saved-objects {{.CLI_ARGS}}
+

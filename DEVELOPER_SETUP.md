@@ -83,6 +83,7 @@ export LIMITLESS_API_KEY="sk-your-key-here"
 # 2. Accept terms for required models:
 #    - https://hf.co/pyannote/speaker-diarization-3.1
 #    - https://hf.co/pyannote/segmentation-3.0
+#    - https://hf.co/pyannote/speaker-diarization-community-1
 # 3. Get token from https://huggingface.co/settings/tokens
 export HF_TOKEN="hf_your-token-here"
 

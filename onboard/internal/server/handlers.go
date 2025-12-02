@@ -398,8 +398,8 @@ func (s *Server) processJob(job *Job) {
 					hourInTZ := hourUTC.In(loc)
 					if hourInTZ.Format("2006-01-02") == dateInTZ {
 						if wasCached {
-							// Already existed, mark as done immediately
-							s.updateHourStage(job, hourKey, "lifelog", StageStatusDone, 100, "")
+							// Already existed, mark as skipped
+							s.updateHourStage(job, hourKey, "lifelog", StageStatusSkipped, 100, "")
 						} else {
 							// Just fetched, mark as done
 							s.updateHourStage(job, hourKey, "lifelog", StageStatusDone, 100, "")
@@ -441,7 +441,7 @@ func (s *Server) processJob(job *Job) {
 							// Lifelogs already exist - skip
 							fmt.Printf("data/%s is already in Elasticsearch - skipping loading.\n", relPathForMsg)
 							s.mu.Lock()
-							job.DateLifelogElasticsearch[dateInTZ] = StageStatusDone
+							job.DateLifelogElasticsearch[dateInTZ] = StageStatusSkipped
 							s.mu.Unlock()
 						} else {
 							// Print loading message before attempting export
@@ -461,7 +461,7 @@ func (s *Server) processJob(job *Job) {
 							} else if wasSkipped {
 								fmt.Printf("data/%s is already in Elasticsearch - skipping loading.\n", relPathForMsg)
 								s.mu.Lock()
-								job.DateLifelogElasticsearch[dateInTZ] = StageStatusDone
+								job.DateLifelogElasticsearch[dateInTZ] = StageStatusSkipped
 								s.mu.Unlock()
 							} else {
 								s.mu.Lock()
@@ -551,8 +551,8 @@ func (s *Server) processJob(job *Job) {
 				}
 
 				if wasCached {
-					// File already existed, mark as done immediately
-					s.updateHourStage(job, hourKey, "audio", StageStatusDone, 100, "")
+					// File already existed, mark as skipped
+					s.updateHourStage(job, hourKey, "audio", StageStatusSkipped, 100, "")
 				} else {
 					// Just downloaded, update progress
 					s.updateHourStage(job, hourKey, "audio", StageStatusRunning, 0, "")
@@ -619,9 +619,9 @@ func (s *Server) processJob(job *Job) {
 				}
 
 				if wasCached {
-					// Result was loaded from cache, mark as done immediately
+					// Result was loaded from cache, mark as skipped
 					// Don't print extra messages - the "already exists" message from RunDiarization is sufficient
-					s.updateHourStage(job, hourKey, "diarize", StageStatusDone, 100, "")
+					s.updateHourStage(job, hourKey, "diarize", StageStatusSkipped, 100, "")
 				} else {
 					// Just diarized, mark as done (no completion message - consistent with other stages)
 					s.updateHourStage(job, hourKey, "diarize", StageStatusDone, 100, "")
@@ -641,21 +641,8 @@ func (s *Server) processJob(job *Job) {
 						audioRelPath = audioFile
 					}
 
-					// Check if segments already exist before attempting export
-					// This allows us to print the skip message before doing work
-					// Extract recording ID from audio file path (same logic as export2elastic)
-					recordingID := extractRecordingIDFromAudioPath(audioRelPath)
-					if recordingID != "" && s.storage != nil {
-						existingSegments, checkErr := s.storage.GetSegmentsByRecording(ctx, recordingID)
-						if checkErr == nil && len(existingSegments) > 0 {
-							// Segments already exist in Elasticsearch - skip
-							fmt.Printf("data/%s is already in Elasticsearch - skipping loading.\n", relPath)
-							s.updateHourStage(job, hourKey, "elasticsearch", StageStatusDone, 100, "")
-							continue // Skip to next hour
-						}
-					}
-
-					// Print loading message before attempting export
+					// ExportResult will check if segments already exist after creating the recording
+					// This ensures we use the same recording ID that was actually created
 					fmt.Printf("Loading %s to Elasticsearch\n", relPath)
 
 					_, _, wasSkipped, err := s.exporter.ExportResult(ctx, result, audioRelPath)
@@ -664,8 +651,9 @@ func (s *Server) processJob(job *Job) {
 						s.updateHourStage(job, hourKey, "elasticsearch", StageStatusFailed, 0, err.Error())
 						// Don't fail the job - export is optional
 					} else if wasSkipped {
-						// This shouldn't happen if we checked above, but handle it anyway
-						s.updateHourStage(job, hourKey, "elasticsearch", StageStatusDone, 100, "")
+						// ExportResult detected segments already exist - skip
+						fmt.Printf("data/%s is already in Elasticsearch - skipping loading.\n", relPath)
+						s.updateHourStage(job, hourKey, "elasticsearch", StageStatusSkipped, 100, "")
 					} else {
 						s.updateHourStage(job, hourKey, "elasticsearch", StageStatusDone, 100, "")
 					}
@@ -685,17 +673,17 @@ func (s *Server) processJob(job *Job) {
 	allDone := true
 	for _, hp := range job.HourProgress {
 		// Check lifelog (should be done for all hours in the same date)
-		if hp.Lifelog != StageStatusDone {
+		if hp.Lifelog != StageStatusDone && hp.Lifelog != StageStatusSkipped {
 			allDone = false
 			break
 		}
-		// Check audio (can be Done or NotAvailable)
-		if hp.Audio != StageStatusDone && hp.Audio != StageStatusNotAvailable {
+		// Check audio (can be Done, Skipped, or NotAvailable)
+		if hp.Audio != StageStatusDone && hp.Audio != StageStatusSkipped && hp.Audio != StageStatusNotAvailable {
 			allDone = false
 			break
 		}
-		// Check diarize (can be Done or NotAvailable)
-		if hp.Diarize != StageStatusDone && hp.Diarize != StageStatusNotAvailable {
+		// Check diarize (can be Done, Skipped, or NotAvailable)
+		if hp.Diarize != StageStatusDone && hp.Diarize != StageStatusSkipped && hp.Diarize != StageStatusNotAvailable {
 			allDone = false
 			break
 		}

@@ -33,16 +33,17 @@ type Recording struct {
 // Segment represents a time period during which a single speaker speaks
 // Equivalent to Limitless API's "blockquote" type
 type Segment struct {
-	ID              int64     `json:"id"`                // Auto-increment ID (SQLite) or generated ID (Elasticsearch)
-	SpeakerID       string    `json:"speaker_id"`        // Global speaker ID (references Speaker.ID)
-	RecordingID     string    `json:"recording_id"`      // Recording ID (references Recording.ID)
-	LocalSpeakerID  *string   `json:"local_speaker_id"`  // Original SPEAKER_XX from diarization (optional, for debugging)
-	StartTime       float64   `json:"start_time"`        // Start time in seconds (relative to recording start)
-	EndTime         float64   `json:"end_time"`          // End time in seconds (relative to recording start)
-	Duration        float64   `json:"duration"`          // Duration in seconds (end_time - start_time)
-	StartByteOffset *int64    `json:"start_byte_offset"` // Byte offset for HTTP Range requests (optional, NULL if not indexed)
-	EndByteOffset   *int64    `json:"end_byte_offset"`   // Byte offset for HTTP Range requests (optional, NULL if not indexed)
-	CreatedAt       time.Time `json:"created_at"`
+	ID                 int64     `json:"id"`                   // Auto-increment ID (SQLite) or generated ID (Elasticsearch)
+	SpeakerEmbeddingID *string   `json:"speaker_embedding_id"` // Optional: References SpeakerEmbedding.ID (NULL if embedding not stored)
+	SpeakerID          *string   `json:"speaker_id"`           // Optional: Global speaker ID (NULL if no match, set if match >= threshold)
+	RecordingID        string    `json:"recording_id"`         // Recording ID (references Recording.ID)
+	LocalSpeakerID     *string   `json:"local_speaker_id"`     // Original SPEAKER_XX from diarization (optional, for debugging)
+	StartTime          float64   `json:"start_time"`           // Start time in seconds (relative to recording start)
+	EndTime            float64   `json:"end_time"`             // End time in seconds (relative to recording start)
+	Duration           float64   `json:"duration"`             // Duration in seconds (end_time - start_time)
+	StartByteOffset    *int64    `json:"start_byte_offset"`    // Byte offset for HTTP Range requests (optional, NULL if not indexed)
+	EndByteOffset      *int64    `json:"end_byte_offset"`      // Byte offset for HTTP Range requests (optional, NULL if not indexed)
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 // SpeakerMatch represents a speaker match result from similarity search
@@ -82,4 +83,18 @@ const EmbeddingDimension = 256
 
 // SimilarityThreshold is the default threshold for speaker matching
 // Speakers with similarity >= this threshold are considered the same person
-const SimilarityThreshold = 0.85
+// Based on analysis: 0.85 matches 73.8% of embeddings, 0.82 matches 85.0%
+// Using 0.82 as a better balance between precision and recall
+const SimilarityThreshold = 0.82
+
+// SpeakerEmbedding stores individual speaker embeddings from recordings
+// Used for clustering and centroid computation
+type SpeakerEmbedding struct {
+	ID              string    `json:"id"`               // Unique ID for this embedding
+	SpeakerID       *string   `json:"speaker_id"`       // Optional: Points to Speaker.ID (centroid), NULL until clustered or matched
+	RecordingID     string    `json:"recording_id"`     // Which recording this came from
+	LocalSpeakerID  string    `json:"local_speaker_id"` // SPEAKER_00, SPEAKER_01, etc. from that recording
+	Embedding       []float32 `json:"embedding"`        // The actual embedding vector (256 dimensions)
+	DurationSeconds float64   `json:"duration_seconds"` // Total seconds this speaker spoke in this recording (sum of segment durations)
+	CreatedAt       time.Time `json:"created_at"`
+}

@@ -42,7 +42,8 @@ type Storage interface {
 	// Returns speakers sorted by similarity (highest first)
 	// threshold: minimum similarity score (0.0 to 1.0), use SimilarityThreshold constant
 	// limit: maximum number of results to return (0 = no limit)
-	FindSimilarSpeakers(ctx context.Context, embedding []float32, threshold float64, limit int) ([]SpeakerMatch, error)
+	// onlyCentroids: if true, only searches against centroid speakers (all speakers in table are centroids)
+	FindSimilarSpeakers(ctx context.Context, embedding []float32, threshold float64, limit int, onlyCentroids bool) ([]SpeakerMatch, error)
 
 	// UpdateSpeaker updates an existing speaker record
 	// Only non-zero fields are updated
@@ -93,8 +94,19 @@ type Storage interface {
 	GetSegment(ctx context.Context, id int64) (*Segment, error)
 
 	// GetSegmentsBySpeaker retrieves all segments for a given speaker
+	// Uses denormalized SpeakerID field for fast queries (no joins needed)
 	// Results are sorted by start_time ascending
 	GetSegmentsBySpeaker(ctx context.Context, speakerID string) ([]*Segment, error)
+
+	// GetSegmentsBySpeakerEmbedding retrieves all segments that reference a specific speaker embedding
+	// Used for tracking which segments used which embeddings
+	// Results are sorted by start_time ascending
+	GetSegmentsBySpeakerEmbedding(ctx context.Context, embeddingID string) ([]*Segment, error)
+
+	// GetSegmentsWithoutEmbeddings retrieves segments that don't have stored embeddings
+	// Used for analysis of selective storage policy
+	// Results are sorted by start_time ascending
+	GetSegmentsWithoutEmbeddings(ctx context.Context) ([]*Segment, error)
 
 	// GetSegmentsByRecording retrieves all segments for a given recording
 	// Results are sorted by start_time ascending
@@ -157,6 +169,38 @@ type Storage interface {
 	// Only non-zero fields are updated
 	// Returns ErrNotFound if blockquote doesn't exist
 	UpdateLifelogBlockquote(ctx context.Context, blockquote *LifelogBlockquote) error
+
+	// SpeakerEmbedding operations
+
+	// CreateSpeakerEmbedding creates a new speaker embedding record
+	// Returns ErrDuplicateKey if embedding with same ID already exists
+	// Returns ErrInvalidEmbedding if embedding dimension is incorrect
+	CreateSpeakerEmbedding(ctx context.Context, embedding *SpeakerEmbedding) error
+
+	// GetSpeakerEmbedding retrieves a speaker embedding by ID
+	// Returns ErrNotFound if embedding doesn't exist
+	GetSpeakerEmbedding(ctx context.Context, id string) (*SpeakerEmbedding, error)
+
+	// ListUnclusteredEmbeddings lists all embeddings that haven't been assigned to a speaker yet
+	// These are embeddings where SpeakerID is NULL
+	// Results are sorted by created_at ascending
+	ListUnclusteredEmbeddings(ctx context.Context) ([]*SpeakerEmbedding, error)
+
+	// ListAllEmbeddings lists all stored embeddings, optionally filtered by speaker
+	// If speakerID is not nil, only returns embeddings assigned to that speaker
+	// If speakerID is nil, returns all embeddings
+	// Results are sorted by created_at ascending
+	ListAllEmbeddings(ctx context.Context, speakerID *string) ([]*SpeakerEmbedding, error)
+
+	// UpdateSpeakerEmbedding updates an existing speaker embedding record
+	// Only non-zero fields are updated
+	// Returns ErrNotFound if embedding doesn't exist
+	UpdateSpeakerEmbedding(ctx context.Context, embedding *SpeakerEmbedding) error
+
+	// UpdateSegment updates an existing segment record
+	// Only non-zero fields are updated
+	// Returns ErrNotFound if segment doesn't exist
+	UpdateSegment(ctx context.Context, segment *Segment) error
 }
 
 // ValidateEmbedding checks if an embedding has the correct dimension and non-zero magnitude
