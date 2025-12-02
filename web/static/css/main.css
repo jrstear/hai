@@ -195,6 +195,30 @@ section {
     background-color: #e3f2fd;
 }
 
+/* Drag-and-drop styles */
+.speaker-row.dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+}
+
+.contact-row.drag-over {
+    background-color: #e8f5e9 !important;
+    border: 2px dashed #4caf50;
+    box-sizing: border-box;
+}
+
+.contact-row[draggable="false"] {
+    cursor: default;
+}
+
+.speaker-row[draggable="true"] {
+    cursor: grab;
+}
+
+.speaker-row[draggable="true"]:active {
+    cursor: grabbing;
+}
+
 .contact-row[data-favorite-color] {
     /* Color will be set via JavaScript or inline style */
 }

@@ -43,7 +43,8 @@
                     {{$favoriteColor := index . "favorite_color"}}
                     {{$id := index . "id"}}
                     <div class="contact-row" data-contact-id="{{$id}}" data-contact-name="{{$name}}" 
-                         {{if $favoriteColor}}data-favorite-color="{{$favoriteColor}}"{{end}}>
+                         {{if $favoriteColor}}data-favorite-color="{{$favoriteColor}}"{{end}}
+                         draggable="false">
                         <div class="contact-picture">
                             {{if $pictureURL}}
                                 <img src="{{$pictureURL}}" alt="{{$name}}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
@@ -88,7 +89,7 @@
                     {{$duration := index . "duration"}}
                     {{$durationDisplay := index . "duration_display"}}
                     {{$contactID := index . "contact_id"}}
-                    <div class="speaker-row" data-speaker-id="{{$id}}" data-speaker-last-seen="{{$lastSeen}}" data-speaker-duration="{{$duration}}">
+                    <div class="speaker-row" data-speaker-id="{{$id}}" data-speaker-last-seen="{{$lastSeen}}" data-speaker-duration="{{$duration}}" draggable="true">
                         <div class="speaker-duration-col">
                             {{$durationDisplay}}
                         </div>
@@ -127,9 +128,9 @@
         const dropZone = document.getElementById('drop-zone');
         const contactsSearch = document.getElementById('contacts-search');
         const contactsContainer = document.getElementById('contacts-container');
-        const contactRows = document.querySelectorAll('.contact-row');
+        let contactRows = document.querySelectorAll('.contact-row');
         const speakersSearch = document.getElementById('speakers-search');
-        const speakerRows = document.querySelectorAll('.speaker-row');
+        let speakerRows = document.querySelectorAll('.speaker-row');
         
         // Upload function
         async function uploadFile(file) {
@@ -249,41 +250,15 @@
             });
         }
         
-        // Contact row click handler and color styling
-        contactRows.forEach(function(row) {
-            // Apply favorite color if present
-            const favoriteColor = row.getAttribute('data-favorite-color');
-            if (favoriteColor) {
-                // Convert hex to rgba with 20% opacity
-                const hex = favoriteColor.replace('#', '');
-                const r = parseInt(hex.substr(0, 2), 16);
-                const g = parseInt(hex.substr(2, 2), 16);
-                const b = parseInt(hex.substr(4, 2), 16);
-                row.style.backgroundColor = `rgba(${r}, ${g}, ${b}, 0.2)`;
-            }
-            
-            // Click handler
-            row.addEventListener('click', function() {
-                // Remove previous selection from both contacts and speakers
-                contactRows.forEach(function(r) {
-                    r.classList.remove('selected');
-                });
-                speakerRows.forEach(function(r) {
-                    r.classList.remove('selected');
-                });
-                
-                // Select this row
-                row.classList.add('selected');
-                
-                const contactId = row.getAttribute('data-contact-id');
-                loadContactRecordings(contactId);
-            });
-    });
+        // Attach handlers to contact and speaker rows (initial load)
+        attachContactHandlers();
+        attachSpeakerHandlers();
     
     // Speakers search functionality
     if (speakersSearch) {
         speakersSearch.addEventListener('input', function(e) {
             const searchTerm = e.target.value.toLowerCase().trim();
+            const speakerRows = document.querySelectorAll('.speaker-row');
             speakerRows.forEach(function(row) {
                 const id = row.getAttribute('data-speaker-id') || '';
                 if (id.toLowerCase().includes(searchTerm)) {
@@ -295,24 +270,6 @@
         });
     }
     
-    // Speaker row click handler
-    speakerRows.forEach(function(row) {
-        row.addEventListener('click', function() {
-            // Remove previous selection from both contacts and speakers
-            contactRows.forEach(function(r) {
-                r.classList.remove('selected');
-            });
-            speakerRows.forEach(function(r) {
-                r.classList.remove('selected');
-            });
-            
-            // Select this row
-            row.classList.add('selected');
-            
-            const speakerId = row.getAttribute('data-speaker-id');
-            loadSpeakerRecordings(speakerId);
-        });
-    });
     
     // Function to load recordings for a contact
     async function loadContactRecordings(contactId) {
@@ -420,6 +377,290 @@
     let currentAudio = null;
     let currentPlayingButton = null;
     let currentRecordingKey = null; // Track which recording is playing (recordingId:startTime:endTime)
+    
+    // Function to associate a speaker with a contact
+    async function associateSpeakerToContact(speakerId, contactId, contactRow) {
+        try {
+            const apiUrl = '{{.APIURL}}';
+            const response = await fetch(`${apiUrl}/api/contacts/${contactId}/associate-speaker`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    speaker_id: speakerId
+                })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: response.statusText }));
+                throw new Error(errorData.message || `Failed to associate speaker: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            console.log('Speaker associated:', result);
+            
+            // Show success feedback
+            const contactName = contactRow.getAttribute('data-contact-name');
+            showNotification(`Speaker associated with ${contactName}`, 'success');
+            
+            // Refresh speakers list (the associated speaker should disappear)
+            // Also refresh contacts to update known status
+            // Use sequential refresh to ensure both complete
+            await refreshSpeakers();
+            await refreshContacts();
+            await refreshContacts();
+            
+        } catch (error) {
+            console.error('Error associating speaker:', error);
+            showNotification('Failed to associate speaker: ' + error.message, 'error');
+        }
+    }
+    
+    // Function to refresh speakers list
+    async function refreshSpeakers() {
+        try {
+            const apiUrl = '{{.APIURL}}';
+            const response = await fetch(`${apiUrl}/api/speakers/unassociated`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch speakers: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            const speakersContainer = document.getElementById('speakers-container');
+            
+            if (data.speakers && data.speakers.length > 0) {
+                let html = '';
+                data.speakers.forEach(function(speaker) {
+                    const durationDisplay = speaker.duration_display || formatDuration(speaker.duration || 0);
+                    const lastSeen = speaker.last_seen || '';
+                    html += `
+                        <div class="speaker-row" data-speaker-id="${speaker.id}" 
+                             data-speaker-last-seen="${lastSeen}" 
+                             data-speaker-duration="${speaker.duration || 0}" 
+                             draggable="true">
+                            <div class="speaker-duration-col">${durationDisplay}</div>
+                            <div class="speaker-latest-col">${formatDateDisplay(lastSeen)}</div>
+                        </div>
+                    `;
+                });
+                speakersContainer.innerHTML = html;
+                
+                // Re-attach event handlers to new speaker rows
+                attachSpeakerHandlers();
+            } else {
+                speakersContainer.innerHTML = '<div class="speakers-empty"><p>No unassociated speakers found.</p></div>';
+            }
+        } catch (error) {
+            console.error('Error refreshing speakers:', error);
+        }
+    }
+    
+    // Function to refresh contacts list
+    async function refreshContacts() {
+        try {
+            const apiUrl = '{{.APIURL}}';
+            const response = await fetch(`${apiUrl}/api/contacts`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch contacts: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            const contactsContainer = document.getElementById('contacts-container');
+            
+            if (data.contacts && data.contacts.length > 0) {
+                let html = '';
+                data.contacts.forEach(function(contact) {
+                    const name = contact.name || 'Unknown';
+                    const known = contact.known || false;
+                    const pictureURL = contact.picture_url || '';
+                    const favoriteColor = contact.favorite_color || '';
+                    const id = contact.id || '';
+                    const firstChar = name.length > 0 ? name[0].toUpperCase() : '?';
+                    
+                    html += `
+                        <div class="contact-row" data-contact-id="${id}" data-contact-name="${name}" 
+                             ${favoriteColor ? `data-favorite-color="${favoriteColor}"` : ''}
+                             draggable="false">
+                            <div class="contact-picture">
+                                ${pictureURL ? `
+                                    <img src="${pictureURL}" alt="${name}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                    <div class="contact-initials" style="display: none;">${firstChar}</div>
+                                ` : `
+                                    <div class="contact-initials">${firstChar}</div>
+                                `}
+                            </div>
+                            <div class="contact-info">
+                                <div class="contact-name">${name}</div>
+                            </div>
+                            <div class="contact-status">
+                                ${known ? `
+                                    <span class="status-icon status-known" title="Known">✓</span>
+                                ` : `
+                                    <span class="status-icon status-unknown" title="Unknown">○</span>
+                                `}
+                            </div>
+                        </div>
+                    `;
+                });
+                contactsContainer.innerHTML = html;
+                
+                // Re-attach event handlers to new contact rows
+                attachContactHandlers();
+                
+                // Re-attach search handler for new rows
+                const contactsSearch = document.getElementById('contacts-search');
+                if (contactsSearch) {
+                    // Remove old listener and add new one (if needed)
+                    contactsSearch.addEventListener('input', function(e) {
+                        const searchTerm = e.target.value.toLowerCase().trim();
+                        const rows = document.querySelectorAll('.contact-row');
+                        rows.forEach(function(row) {
+                            const name = row.getAttribute('data-contact-name') || '';
+                            if (name.toLowerCase().includes(searchTerm)) {
+                                row.style.display = 'flex';
+                            } else {
+                                row.style.display = 'none';
+                            }
+                        });
+                    });
+                }
+            } else {
+                contactsContainer.innerHTML = '<div class="contacts-empty"><p>No contacts found. Upload a vCard file to get started.</p></div>';
+            }
+        } catch (error) {
+            console.error('Error refreshing contacts:', error);
+        }
+    }
+    
+    // Helper function to format date for display (similar to Go template function)
+    function formatDateDisplay(dateStr) {
+        if (!dateStr) return 'Unknown';
+        
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return 'Unknown';
+        
+        const now = new Date();
+        const diff = now - date;
+        
+        if (diff < 60000) return 'Just now';
+        if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+        if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+        if (diff < 604800000) return Math.floor(diff / 86400000) + 'd ago';
+        return (date.getMonth() + 1) + '/' + date.getDate();
+    }
+    
+    // Helper function to show notification
+    function showNotification(message, type) {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: ${type === 'success' ? '#4caf50' : '#f44336'};
+            color: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1000;
+            animation: slideIn 0.3s ease-out;
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Remove after 3 seconds
+        setTimeout(function() {
+            notification.style.animation = 'slideOut 0.3s ease-out';
+            setTimeout(function() {
+                document.body.removeChild(notification);
+            }, 300);
+        }, 3000);
+    }
+    
+    // Function to attach handlers to contact rows (extracted for reuse)
+    function attachContactHandlers() {
+        const contactRows = document.querySelectorAll('.contact-row');
+        contactRows.forEach(function(row) {
+            // Apply favorite color if present
+            const favoriteColor = row.getAttribute('data-favorite-color');
+            if (favoriteColor) {
+                const hex = favoriteColor.replace('#', '');
+                const r = parseInt(hex.substr(0, 2), 16);
+                const g = parseInt(hex.substr(2, 2), 16);
+                const b = parseInt(hex.substr(4, 2), 16);
+                row.style.backgroundColor = `rgba(${r}, ${g}, ${b}, 0.2)`;
+            }
+            
+            // Click handler
+            row.addEventListener('click', function() {
+                document.querySelectorAll('.contact-row, .speaker-row').forEach(function(r) {
+                    r.classList.remove('selected');
+                });
+                row.classList.add('selected');
+                const contactId = row.getAttribute('data-contact-id');
+                loadContactRecordings(contactId);
+            });
+            
+            // Drag-and-drop handlers
+            row.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                row.classList.add('drag-over');
+            });
+            
+            row.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                row.classList.remove('drag-over');
+            });
+            
+            row.addEventListener('drop', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                row.classList.remove('drag-over');
+                const speakerId = e.dataTransfer.getData('text/plain');
+                if (speakerId) {
+                    const contactId = row.getAttribute('data-contact-id');
+                    associateSpeakerToContact(speakerId, contactId, row);
+                }
+            });
+        });
+    }
+    
+    // Function to attach handlers to speaker rows (extracted for reuse)
+    function attachSpeakerHandlers() {
+        const speakerRows = document.querySelectorAll('.speaker-row');
+        speakerRows.forEach(function(row) {
+            row.addEventListener('click', function() {
+                document.querySelectorAll('.contact-row, .speaker-row').forEach(function(r) {
+                    r.classList.remove('selected');
+                });
+                row.classList.add('selected');
+                const speakerId = row.getAttribute('data-speaker-id');
+                loadSpeakerRecordings(speakerId);
+            });
+            
+            // Drag handlers
+            row.addEventListener('dragstart', function(e) {
+                const speakerId = row.getAttribute('data-speaker-id');
+                e.dataTransfer.setData('text/plain', speakerId);
+                e.dataTransfer.effectAllowed = 'move';
+                row.classList.add('dragging');
+            });
+            
+            row.addEventListener('dragend', function(e) {
+                row.classList.remove('dragging');
+                document.querySelectorAll('.contact-row').forEach(function(r) {
+                    r.classList.remove('drag-over');
+                });
+            });
+        });
+    }
     
     // Function to play a recording
     async function playRecording(recordingId, startTime, endTime, button) {
