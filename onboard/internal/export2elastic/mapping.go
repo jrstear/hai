@@ -24,8 +24,11 @@ const (
 // 3. Calculates overlap percentage for each segment
 // 4. Selects the segment with highest overlap (if >= MinOverlapThreshold)
 // 5. Updates the blockquote's SpeakerID and RecordingID fields
+// 6. Tracks the best blockquote for each segment (for storing blockquote_id on segments)
 //
 // Blockquotes that already have a SpeakerID set are skipped unless reprocess is true.
+//
+// After processing all blockquotes, updates segments with their best matching blockquote_id.
 //
 // Returns the number of blockquotes matched and any error.
 func (e *Exporter) MapSpeakerNames(ctx context.Context, blockquotes []*storage.LifelogBlockquote, reprocess bool) (int, error) {
@@ -39,6 +42,12 @@ func (e *Exporter) MapSpeakerNames(ctx context.Context, blockquotes []*storage.L
 		matched:      0,
 		unmatched:    0,
 	}
+
+	// Track best blockquote for each segment (segmentID -> {blockquoteID, overlap})
+	segmentMatches := make(map[int64]*struct {
+		blockquoteID string
+		overlap      float64
+	})
 
 	for _, blockquote := range blockquotes {
 		// Skip if already mapped (unless reprocessing)
@@ -68,6 +77,15 @@ func (e *Exporter) MapSpeakerNames(ctx context.Context, blockquotes []*storage.L
 				continue
 			}
 
+			// Track best blockquote for this segment
+			segmentID := bestMatch.ID
+			if existing, exists := segmentMatches[segmentID]; !exists || bestOverlap > existing.overlap {
+				segmentMatches[segmentID] = &struct {
+					blockquoteID string
+					overlap      float64
+				}{blockquote.ID, bestOverlap}
+			}
+
 			stats.matched++
 			speakerIDStr := "nil"
 			if bestMatch.SpeakerID != nil {
@@ -86,9 +104,29 @@ func (e *Exporter) MapSpeakerNames(ctx context.Context, blockquotes []*storage.L
 		}
 	}
 
+	// Update segments with their best matching blockquote_id
+	segmentsUpdated := 0
+	for segmentID, match := range segmentMatches {
+		// Get the segment
+		segment, err := e.storage.GetSegment(ctx, segmentID)
+		if err != nil {
+			log.Printf("Warning: failed to get segment %d for blockquote update: %v", segmentID, err)
+			continue
+		}
+
+		// Update blockquote_id
+		segment.BlockquoteID = &match.blockquoteID
+		if err := e.storage.UpdateSegment(ctx, segment); err != nil {
+			log.Printf("Warning: failed to update segment %d with blockquote_id %s: %v", segmentID, match.blockquoteID, err)
+			continue
+		}
+
+		segmentsUpdated++
+	}
+
 	// Log summary
-	log.Printf("Speaker name mapping complete: %d total, %d already mapped, %d matched, %d unmatched",
-		stats.total, stats.alreadyMapped, stats.matched, stats.unmatched)
+	log.Printf("Speaker name mapping complete: %d total, %d already mapped, %d matched, %d unmatched, %d segments updated with blockquote_id",
+		stats.total, stats.alreadyMapped, stats.matched, stats.unmatched, segmentsUpdated)
 
 	return stats.matched, nil
 }

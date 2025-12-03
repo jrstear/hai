@@ -4,10 +4,12 @@ This document describes the unified schema design for both SQLite and Elasticsea
 
 ## Overview
 
-The schema consists of three core entities:
+The schema consists of five core entities:
 1. **Speakers**: Global speaker registry with voice embeddings
 2. **Recordings**: Audio file metadata
 3. **Segments**: Time-based speaker segments with optional byte offsets
+4. **Lifelogs**: Daily lifelog documents from Limitless API (markdown transcripts)
+5. **LifelogBlockquotes**: Speaker segments within lifelogs (transcript excerpts)
 
 ## Core Entities
 
@@ -58,6 +60,7 @@ A time period during which a single speaker speaks. Equivalent to Limitless API'
 - `speaker_id` (string): Global speaker ID (references Speaker.ID)
 - `recording_id` (string): Recording ID (references Recording.ID)
 - `local_speaker_id` (string, optional): Original SPEAKER_XX from diarization (for debugging)
+- `blockquote_id` (string, optional): Best matching blockquote ID (for transcript lookup)
 - `start_time` (float64): Start time in seconds (relative to recording start)
 - `end_time` (float64): End time in seconds (relative to recording start)
 - `duration` (float64): Duration in seconds (end_time - start_time)
@@ -68,6 +71,59 @@ A time period during which a single speaker speaks. Equivalent to Limitless API'
 **Storage:**
 - **SQLite**: Normalized table with foreign keys and indexes
 - **Elasticsearch**: Document with float fields for time and long fields for byte offsets
+
+### Lifelog
+
+A daily lifelog document from the Limitless API containing markdown-formatted transcripts.
+
+**Fields:**
+- `id` (string): Limitless API lifelog ID
+- `title` (string): Lifelog title
+- `markdown` (string): Full markdown content (includes all blockquotes and formatting)
+- `start_time` (time.Time): When lifelog starts (UTC)
+- `end_time` (time.Time): When lifelog ends (UTC)
+- `created_at` (time.Time): When we fetched/imported it
+
+**Storage:**
+- **SQLite**: Not currently stored (Elasticsearch only)
+- **Elasticsearch**: Document in `lifelogs` index with date fields and text field for markdown
+
+**Notes:**
+- Lifelogs are imported from Limitless API
+- Each lifelog represents one day's worth of transcripts
+- The markdown field contains the full formatted transcript with blockquotes
+
+### LifelogBlockquote
+
+A speaker segment (blockquote) within a lifelog. Contains transcript text and speaker information.
+Equivalent to Limitless API's "blockquote" content type.
+
+**Fields:**
+- `id` (string): Generated ID (unique identifier)
+- `lifelog_id` (string): References Lifelog.ID (which lifelog this belongs to)
+- `recording_id` (string, optional): Which recording this overlaps with (populated by matching tool)
+- `content` (string): Transcript text (what was said)
+- `speaker_name` (string): Speaker name from Limitless ("You", "Unknown", "Jon Stearley", etc.)
+- `speaker_id` (string, optional): Mapped to our global speaker ID (populated by matching tool)
+- `start_offset_ms` (int): Milliseconds from lifelog start
+- `end_offset_ms` (int): Milliseconds from lifelog end
+- `start_time` (time.Time): Absolute start time (UTC)
+- `end_time` (time.Time): Absolute end time (UTC)
+- `created_at` (time.Time): Creation timestamp
+
+**Storage:**
+- **SQLite**: Not currently stored (Elasticsearch only)
+- **Elasticsearch**: Document in `lifelog_blockquotes` index with:
+  - Text field for `content` (searchable)
+  - Keyword fields for IDs and speaker_name
+  - Date fields for time ranges
+  - Integer fields for offset milliseconds
+
+**Notes:**
+- Blockquotes are extracted from lifelog markdown during import
+- `recording_id` and `speaker_id` are populated by the matching tool (`onboard/cmd/match-blockquotes-to-segments`)
+- Matching is done via time-based overlap calculation between blockquote time ranges and segment time ranges
+- Once matched, segments store `blockquote_id` for fast transcript lookup
 
 ## SQLite Schema
 
@@ -87,11 +143,12 @@ See `migrations/001_initial_schema.sql` for the complete SQL schema.
 See `elasticsearch_mappings.json` for the complete index mapping.
 
 **Key features:**
-- Three separate indices: `speakers`, `recordings`, `segments`
+- Five separate indices: `speakers`, `recordings`, `segments`, `lifelogs`, `lifelog_blockquotes`
 - `dense_vector` field for speaker embeddings with cosine similarity
 - kNN search enabled for speaker matching
 - Date fields for time-based queries
 - Keyword fields for exact matches (IDs, file paths)
+- Text fields for searchable content (lifelog markdown, blockquote content)
 
 **Index structure:**
 ```
@@ -111,10 +168,24 @@ recordings/
 
 segments/
   - id (keyword)
-  - speaker_id, recording_id, local_speaker_id (keyword)
+  - speaker_id, recording_id, local_speaker_id, blockquote_id (keyword)
   - start_time, end_time, duration (float)
   - start_byte_offset, end_byte_offset (long)
   - created_at (date)
+
+lifelogs/
+  - id (keyword)
+  - title (keyword)
+  - markdown (text)
+  - start_time, end_time, created_at (date)
+
+lifelog_blockquotes/
+  - id (keyword)
+  - lifelog_id, recording_id, speaker_id (keyword)
+  - content (text)
+  - speaker_name (keyword)
+  - start_offset_ms, end_offset_ms (integer)
+  - start_time, end_time, created_at (date)
 ```
 
 ## Speaker Matching
@@ -283,15 +354,48 @@ WHERE id = 12345;
 - Calculate byte offsets for segments
 - Update segments table
 
+## Data Relationships
+
+### Lifelog ↔ LifelogBlockquote
+- One-to-many: A lifelog contains many blockquotes
+- Blockquotes reference their parent lifelog via `lifelog_id`
+
+### LifelogBlockquote ↔ Segment
+- Many-to-one (via matching): Multiple blockquotes can match to one segment (best match wins)
+- Matching is done via time-based overlap calculation
+- Once matched:
+  - Blockquote stores `recording_id` and `speaker_id`
+  - Segment stores `blockquote_id` for fast transcript lookup
+
+### Segment ↔ Recording
+- Many-to-one: Many segments belong to one recording
+- Segments reference recording via `recording_id`
+
+### Segment ↔ Speaker
+- Many-to-one: Many segments belong to one speaker
+- Segments reference speaker via `speaker_id`
+
+### Speaker ↔ Contact
+- One-to-one (optional): A speaker can be associated with a contact
+- Speaker stores `contact_id` when associated
+
 ## Terminology Alignment
 
 **Limitless API uses:**
-- `blockquote` (type) for speaking segments
+- `lifelog` (document type) for daily markdown transcripts
+- `blockquote` (content type) for speaking segments within lifelogs
 - `startOffsetMs` / `endOffsetMs` (milliseconds from lifelog start)
 - `startTime` / `endTime` (ISO 8601 timestamps)
 
 **Our internal terminology:**
-- **Segment**: A time period during which a single speaker speaks (equivalent to Limitless "blockquote")
+- **Lifelog**: A daily lifelog document from Limitless API (markdown transcripts)
+- **LifelogBlockquote**: A speaker segment within a lifelog (transcript excerpt with speaker name)
+- **Segment**: A time period during which a single speaker speaks (from our diarization, equivalent to Limitless "blockquote")
 - **Speaker**: A unique voice identity (can be matched across recordings)
 - **Recording**: A single audio file (1-hour chunk)
+
+**Key Distinction:**
+- **LifelogBlockquote**: Transcript data from Limitless API (external source)
+- **Segment**: Diarization data from our own processing (internal source)
+- They are matched together via time-based overlap to link transcripts to our segments
 

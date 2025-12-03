@@ -38,6 +38,7 @@ type Segment struct {
 	SpeakerID          *string   `json:"speaker_id"`           // Optional: Global speaker ID (NULL if no match, set if match >= threshold)
 	RecordingID        string    `json:"recording_id"`         // Recording ID (references Recording.ID)
 	LocalSpeakerID     *string   `json:"local_speaker_id"`     // Original SPEAKER_XX from diarization (optional, for debugging)
+	BlockquoteID       *string   `json:"blockquote_id"`        // Optional: Best matching blockquote ID (for transcript lookup)
 	StartTime          float64   `json:"start_time"`           // Start time in seconds (relative to recording start)
 	EndTime            float64   `json:"end_time"`             // End time in seconds (relative to recording start)
 	Duration           float64   `json:"duration"`             // Duration in seconds (end_time - start_time)

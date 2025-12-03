@@ -182,12 +182,15 @@ func (s *ElasticsearchStorage) ensureIndices(ctx context.Context) error {
 						"recording_id": map[string]interface{}{
 							"type": "keyword",
 						},
-						"local_speaker_id": map[string]interface{}{
-							"type": "keyword",
-						},
-						"start_time": map[string]interface{}{
-							"type": "float",
-						},
+					"local_speaker_id": map[string]interface{}{
+						"type": "keyword",
+					},
+					"blockquote_id": map[string]interface{}{
+						"type": "keyword",
+					},
+					"start_time": map[string]interface{}{
+						"type": "float",
+					},
 						"end_time": map[string]interface{}{
 							"type": "float",
 						},
@@ -1643,6 +1646,9 @@ func (s *ElasticsearchStorage) segmentToDoc(segment *Segment) map[string]interfa
 	if segment.LocalSpeakerID != nil {
 		doc["local_speaker_id"] = *segment.LocalSpeakerID
 	}
+	if segment.BlockquoteID != nil {
+		doc["blockquote_id"] = *segment.BlockquoteID
+	}
 	if segment.StartByteOffset != nil {
 		doc["start_byte_offset"] = *segment.StartByteOffset
 	}
@@ -1793,6 +1799,9 @@ func (s *ElasticsearchStorage) docToSegment(doc map[string]interface{}) (*Segmen
 	// Parse optional fields
 	if localSpeakerID, ok := doc["local_speaker_id"].(string); ok {
 		segment.LocalSpeakerID = &localSpeakerID
+	}
+	if blockquoteID, ok := doc["blockquote_id"].(string); ok {
+		segment.BlockquoteID = &blockquoteID
 	}
 	if startByteOffset, ok := doc["start_byte_offset"].(float64); ok {
 		offset := int64(startByteOffset)

@@ -12,6 +12,16 @@
         <a href="/contacts">Contacts</a>
     </nav>
     <main>
+        <div class="date-filter-row" style="margin-bottom: 16px; padding: 12px; background: #f5f5f5; border-radius: 4px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <label style="font-weight: 500; font-size: 14px;">Date Range:</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="date" id="start-date" value="2025-11-22" style="padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                <span style="color: #666;">to</span>
+                <input type="date" id="end-date" value="2025-11-23" style="padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                <button id="clear-dates" style="padding: 6px 12px; background: #fff; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 14px;">Clear</button>
+            </div>
+            <span style="font-size: 12px; color: #666; margin-left: auto;">(Automatically applied when selecting a contact or speaker)</span>
+        </div>
         <div class="contacts-header-row">
             <h1 style="margin: 0; flex: 1;">Contacts</h1>
             <div class="vcard-import-container">
@@ -122,6 +132,38 @@
     <script src="/static/js/main.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Date range filter handlers
+        const startDateInput = document.getElementById('start-date');
+        const endDateInput = document.getElementById('end-date');
+        const clearDatesButton = document.getElementById('clear-dates');
+        
+        // Reload recordings when date range changes (only if a contact/speaker is selected)
+        function reloadCurrentRecordings() {
+            const selectedContact = document.querySelector('.contact-row.selected');
+            const selectedSpeaker = document.querySelector('.speaker-row.selected');
+            if (selectedContact) {
+                const contactId = selectedContact.getAttribute('data-contact-id');
+                loadContactRecordings(contactId);
+            } else if (selectedSpeaker) {
+                const speakerId = selectedSpeaker.getAttribute('data-speaker-id');
+                loadSpeakerRecordings(speakerId);
+            }
+            // If nothing is selected, the date filter will apply when user selects a contact/speaker
+        }
+        
+        if (startDateInput) {
+            startDateInput.addEventListener('change', reloadCurrentRecordings);
+        }
+        if (endDateInput) {
+            endDateInput.addEventListener('change', reloadCurrentRecordings);
+        }
+        if (clearDatesButton) {
+            clearDatesButton.addEventListener('click', function() {
+                if (startDateInput) startDateInput.value = '';
+                if (endDateInput) endDateInput.value = '';
+                reloadCurrentRecordings();
+            });
+        }
         const form = document.getElementById('vcard-upload-form');
         const fileInput = document.getElementById('vcard-file');
         const statusDiv = document.getElementById('upload-status');
@@ -272,13 +314,29 @@
     
     
     // Function to load recordings for a contact
+    // Helper function to get date range query params
+    function getDateRangeParams() {
+        const startDate = document.getElementById('start-date').value;
+        const endDate = document.getElementById('end-date').value;
+        const params = new URLSearchParams();
+        if (startDate) {
+            params.append('start_date', startDate);
+        }
+        if (endDate) {
+            params.append('end_date', endDate);
+        }
+        const queryString = params.toString();
+        return queryString ? '?' + queryString : '';
+    }
+
     async function loadContactRecordings(contactId) {
         const recordingsContainer = document.getElementById('recordings-container');
         recordingsContainer.innerHTML = '<div class="recordings-empty"><p>Loading recordings...</p></div>';
         
         try {
             const apiUrl = '{{.APIURL}}';
-            const response = await fetch(`${apiUrl}/api/contacts/${contactId}/recordings`);
+            const dateParams = getDateRangeParams();
+            const response = await fetch(`${apiUrl}/api/contacts/${contactId}/recordings${dateParams}`);
             
             if (!response.ok) {
                 throw new Error(`Failed to fetch recordings: ${response.statusText}`);
@@ -299,7 +357,8 @@
         
         try {
             const apiUrl = '{{.APIURL}}';
-            const response = await fetch(`${apiUrl}/api/speakers/${speakerId}/recordings`);
+            const dateParams = getDateRangeParams();
+            const response = await fetch(`${apiUrl}/api/speakers/${speakerId}/recordings${dateParams}`);
             
             if (!response.ok) {
                 throw new Error(`Failed to fetch recordings: ${response.statusText}`);

@@ -99,6 +99,9 @@
           "end_byte_offset": {
             "type": "long"
           },
+          "blockquote_id": {
+            "type": "keyword"
+          },
           "created_at": {
             "type": "date"
           }

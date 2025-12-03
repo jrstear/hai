@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -71,6 +72,23 @@ func (s *APIServer) HandleGetContactRecordings(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Parse date range filter (optional)
+	var startDate, endDate *time.Time
+	if startDateStr := r.URL.Query().Get("start_date"); startDateStr != "" {
+		if t, err := time.Parse("2006-01-02", startDateStr); err == nil {
+			// Set to start of day
+			startOfDay := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+			startDate = &startOfDay
+		}
+	}
+	if endDateStr := r.URL.Query().Get("end_date"); endDateStr != "" {
+		if t, err := time.Parse("2006-01-02", endDateStr); err == nil {
+			// Set to end of day
+			endOfDay := time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 999999999, t.Location())
+			endDate = &endOfDay
+		}
+	}
+
 	// Collect segments from all speakers
 	allSegments := make([]*storage.Segment, 0)
 	for _, speaker := range speakers {
@@ -81,8 +99,8 @@ func (s *APIServer) HandleGetContactRecordings(w http.ResponseWriter, r *http.Re
 		allSegments = append(allSegments, segments...)
 	}
 
-	// Convert to response format with transcripts
-	segmentsWithTranscripts, err := s.enrichSegmentsWithTranscripts(ctx, allSegments)
+	// Convert to response format with transcripts (and filter by date range if specified)
+	segmentsWithTranscripts, err := s.enrichSegmentsWithTranscripts(ctx, allSegments, startDate, endDate)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -136,6 +154,23 @@ func (s *APIServer) HandleGetSpeakerRecordings(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Parse date range filter (optional)
+	var startDate, endDate *time.Time
+	if startDateStr := r.URL.Query().Get("start_date"); startDateStr != "" {
+		if t, err := time.Parse("2006-01-02", startDateStr); err == nil {
+			// Set to start of day
+			startOfDay := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+			startDate = &startOfDay
+		}
+	}
+	if endDateStr := r.URL.Query().Get("end_date"); endDateStr != "" {
+		if t, err := time.Parse("2006-01-02", endDateStr); err == nil {
+			// Set to end of day
+			endOfDay := time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 999999999, t.Location())
+			endDate = &endOfDay
+		}
+	}
+
 	// Get all segments for this speaker
 	segments, err := s.storage.GetSegmentsBySpeaker(ctx, speakerID)
 	if err != nil {
@@ -143,8 +178,8 @@ func (s *APIServer) HandleGetSpeakerRecordings(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Convert to response format with transcripts
-	segmentsWithTranscripts, err := s.enrichSegmentsWithTranscripts(ctx, segments)
+	// Convert to response format with transcripts (and filter by date range if specified)
+	segmentsWithTranscripts, err := s.enrichSegmentsWithTranscripts(ctx, segments, startDate, endDate)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -173,7 +208,9 @@ func (s *APIServer) HandleGetSpeakerRecordings(w http.ResponseWriter, r *http.Re
 }
 
 // enrichSegmentsWithTranscripts adds transcript and formatted time to segments
-func (s *APIServer) enrichSegmentsWithTranscripts(ctx context.Context, segments []*storage.Segment) ([]SegmentWithTranscript, error) {
+// If startDate or endDate are provided, filters segments to only those whose recording
+// start_time falls within the date range.
+func (s *APIServer) enrichSegmentsWithTranscripts(ctx context.Context, segments []*storage.Segment, startDate, endDate *time.Time) ([]SegmentWithTranscript, error) {
 	result := make([]SegmentWithTranscript, 0, len(segments))
 
 	// Group segments by recording to batch fetch recordings
@@ -188,8 +225,61 @@ func (s *APIServer) enrichSegmentsWithTranscripts(ctx context.Context, segments 
 		}
 	}
 
-	// Get blockquotes for transcripts (if available)
-	// For now, we'll leave transcript empty - can be enhanced later with blockquote matching
+	// Filter segments by date range if specified
+	if startDate != nil || endDate != nil {
+		filteredSegments := make([]*storage.Segment, 0)
+		for _, segment := range segments {
+			recording, exists := recordingMap[segment.RecordingID]
+			if !exists {
+				continue
+			}
+			// Check if recording start_time is within date range
+			if startDate != nil && recording.StartTime.Before(*startDate) {
+				continue
+			}
+			if endDate != nil && recording.StartTime.After(*endDate) {
+				continue
+			}
+			filteredSegments = append(filteredSegments, segment)
+		}
+		segments = filteredSegments
+	}
+
+	// Get blockquotes for transcripts using stored blockquote_id (if available)
+	// Batch fetch blockquotes to minimize queries
+	blockquoteMap := make(map[string]*storage.LifelogBlockquote)
+	blockquoteIDSet := make(map[string]bool)
+	segmentsWithBlockquoteID := 0
+	for _, segment := range segments {
+		if segment.BlockquoteID != nil && *segment.BlockquoteID != "" {
+			blockquoteIDSet[*segment.BlockquoteID] = true
+			segmentsWithBlockquoteID++
+		}
+	}
+
+	// Log debug info
+	if len(segments) > 0 {
+		log.Printf("[DEBUG] enrichSegmentsWithTranscripts: %d segments, %d with blockquote_id, %d unique blockquote IDs", len(segments), segmentsWithBlockquoteID, len(blockquoteIDSet))
+	}
+
+	// Fetch all unique blockquotes
+	blockquotesFound := 0
+	for blockquoteID := range blockquoteIDSet {
+		blockquote, err := s.storage.GetLifelogBlockquote(ctx, blockquoteID)
+		if err != nil {
+			// Log but continue - missing blockquote is not fatal
+			log.Printf("[DEBUG] Failed to fetch blockquote %s: %v", blockquoteID, err)
+			continue
+		}
+		blockquoteMap[blockquoteID] = blockquote
+		blockquotesFound++
+	}
+	
+	if len(blockquoteIDSet) > 0 {
+		log.Printf("[DEBUG] Fetched %d/%d blockquotes successfully", blockquotesFound, len(blockquoteIDSet))
+	}
+
+	// Build result with transcripts
 	for _, segment := range segments {
 		recording, exists := recordingMap[segment.RecordingID]
 		if !exists {
@@ -199,6 +289,19 @@ func (s *APIServer) enrichSegmentsWithTranscripts(ctx context.Context, segments 
 		// Calculate absolute time (recording start + segment start)
 		absoluteTime := recording.StartTime.Add(time.Duration(segment.StartTime * float64(time.Second)))
 
+		// Get transcript from blockquote if available
+		transcript := ""
+		if segment.BlockquoteID != nil && *segment.BlockquoteID != "" {
+			if blockquote, exists := blockquoteMap[*segment.BlockquoteID]; exists {
+				transcript = blockquote.Content
+				if transcript == "" {
+					log.Printf("[DEBUG] Blockquote %s has empty content", *segment.BlockquoteID)
+				}
+			} else {
+				log.Printf("[DEBUG] Blockquote %s not found in map (segment ID: %d)", *segment.BlockquoteID, segment.ID)
+			}
+		}
+
 		result = append(result, SegmentWithTranscript{
 			ID:          segment.ID,
 			SpeakerID:   segment.SpeakerID,
@@ -206,7 +309,7 @@ func (s *APIServer) enrichSegmentsWithTranscripts(ctx context.Context, segments 
 			StartTime:   segment.StartTime,
 			EndTime:     segment.EndTime,
 			Duration:    segment.Duration,
-			Transcript:  "", // TODO: Match with blockquotes
+			Transcript:  transcript,
 			Time:        absoluteTime.Format("2006-01-02 15:04:05"),
 		})
 	}
