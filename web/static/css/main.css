@@ -455,6 +455,12 @@ section {
     font-size: 13px;
     color: #666;
     font-family: monospace;
+    line-height: 1.6;
+}
+
+.recording-time .blockquote-time {
+    color: #999;
+    font-size: 13px;
 }
 
 .recording-duration {
@@ -464,6 +470,24 @@ section {
     color: #666;
     font-family: monospace;
     text-align: right;
+    line-height: 1.6;
+}
+
+.recording-duration .blockquote-duration {
+    color: #999;
+    font-size: 13px;
+}
+
+.recording-speaker-name {
+    flex: 0 0 120px;
+    padding: 0 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #555;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .recording-transcript {

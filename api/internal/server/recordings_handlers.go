@@ -17,14 +17,17 @@ import (
 
 // SegmentWithTranscript represents a segment with transcript information
 type SegmentWithTranscript struct {
-	ID          int64   `json:"id"`
-	SpeakerID   *string `json:"speaker_id,omitempty"`
-	RecordingID string  `json:"recording_id"`
-	StartTime   float64 `json:"start_time"`
-	EndTime     float64 `json:"end_time"`
-	Duration    float64 `json:"duration"`
-	Transcript  string  `json:"transcript,omitempty"`
-	Time        string  `json:"time"` // Formatted time (recording start + segment start)
+	ID                int64   `json:"id"`
+	SpeakerID         *string `json:"speaker_id,omitempty"`
+	RecordingID       string  `json:"recording_id"`
+	StartTime         float64 `json:"start_time"`
+	EndTime           float64 `json:"end_time"`
+	Duration          float64 `json:"duration"`
+	SpeakerName       string  `json:"speaker_name,omitempty"` // From blockquote
+	Transcript        string  `json:"transcript,omitempty"`
+	Time              string  `json:"time"`                    // Formatted time (recording start + segment start)
+	BlockquoteTime    string  `json:"blockquote_time,omitempty"`    // Formatted blockquote start time
+	BlockquoteDuration float64 `json:"blockquote_duration,omitempty"` // Blockquote duration in seconds
 }
 
 // HandleGetContactRecordings handles GET /api/contacts/{contactId}/recordings
@@ -289,11 +292,17 @@ func (s *APIServer) enrichSegmentsWithTranscripts(ctx context.Context, segments 
 		// Calculate absolute time (recording start + segment start)
 		absoluteTime := recording.StartTime.Add(time.Duration(segment.StartTime * float64(time.Second)))
 
-		// Get transcript from blockquote if available
+		// Get transcript, speaker_name, and timing from blockquote if available
 		transcript := ""
+		speakerName := ""
+		blockquoteTime := ""
+		var blockquoteDuration float64
 		if segment.BlockquoteID != nil && *segment.BlockquoteID != "" {
 			if blockquote, exists := blockquoteMap[*segment.BlockquoteID]; exists {
 				transcript = blockquote.Content
+				speakerName = blockquote.SpeakerName
+				blockquoteTime = blockquote.StartTime.Format("2006-01-02 15:04:05")
+				blockquoteDuration = blockquote.EndTime.Sub(blockquote.StartTime).Seconds()
 				if transcript == "" {
 					log.Printf("[DEBUG] Blockquote %s has empty content", *segment.BlockquoteID)
 				}
@@ -303,14 +312,17 @@ func (s *APIServer) enrichSegmentsWithTranscripts(ctx context.Context, segments 
 		}
 
 		result = append(result, SegmentWithTranscript{
-			ID:          segment.ID,
-			SpeakerID:   segment.SpeakerID,
-			RecordingID: segment.RecordingID,
-			StartTime:   segment.StartTime,
-			EndTime:     segment.EndTime,
-			Duration:    segment.Duration,
-			Transcript:  transcript,
-			Time:        absoluteTime.Format("2006-01-02 15:04:05"),
+			ID:                segment.ID,
+			SpeakerID:         segment.SpeakerID,
+			RecordingID:       segment.RecordingID,
+			StartTime:         segment.StartTime,
+			EndTime:           segment.EndTime,
+			Duration:          segment.Duration,
+			SpeakerName:       speakerName,
+			Transcript:        transcript,
+			Time:              absoluteTime.Format("2006-01-02 15:04:05"),
+			BlockquoteTime:    blockquoteTime,
+			BlockquoteDuration: blockquoteDuration,
 		})
 	}
 

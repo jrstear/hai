@@ -389,18 +389,34 @@
         segments.forEach(function(segment) {
             const duration = formatDuration(segment.duration);
             const time = segment.time || 'Unknown';
+            const blockquoteTime = segment.blockquote_time || '';
+            const blockquoteDuration = segment.blockquote_duration ? formatDuration(segment.blockquote_duration) : '';
+            const speakerName = segment.speaker_name || '';
             const transcript = segment.transcript || '';
             const recordingId = segment.recording_id;
             const startTime = segment.start_time || 0;
             const endTime = segment.end_time || 0;
+            
+            // Format time cell with segment and blockquote times
+            let timeCell = time;
+            if (blockquoteTime) {
+                timeCell = time + '<br><span class="blockquote-time">' + blockquoteTime + '</span>';
+            }
+            
+            // Format duration cell with segment and blockquote durations
+            let durationCell = duration;
+            if (blockquoteDuration) {
+                durationCell = duration + '<br><span class="blockquote-duration">' + blockquoteDuration + '</span>';
+            }
             
             html += `
                 <div class="recording-row" data-recording-id="${recordingId}" data-start-time="${startTime}" data-end-time="${endTime}">
                     <div class="recording-play">
                         <button class="play-button" title="Play recording">▶</button>
                     </div>
-                    <div class="recording-time">${time}</div>
-                    <div class="recording-duration">${duration}</div>
+                    <div class="recording-time">${timeCell}</div>
+                    <div class="recording-duration">${durationCell}</div>
+                    <div class="recording-speaker-name">${speakerName || ''}</div>
                     <div class="recording-transcript">${transcript || '<em>No transcript available</em>'}</div>
                 </div>
             `;
