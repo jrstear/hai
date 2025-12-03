@@ -64,6 +64,11 @@ func main() {
 		r.Route("/recordings", func(r chi.Router) {
 			r.Get("/{recordingId}/audio", srv.HandleGetRecordingAudio)
 		})
+
+		// Lifelogs endpoints
+		r.Route("/lifelogs", func(r chi.Router) {
+			r.Get("/", srv.HandleGetLifelogs)
+		})
 	})
 
 	// Start server

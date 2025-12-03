@@ -47,6 +47,7 @@ func main() {
 	// Page routes (HTML)
 	r.Get("/", srv.HandleIndex)
 	r.Get("/contacts", srv.HandleContactsPage)
+	r.Get("/lifelog", srv.HandleLifelogPage)
 	// Future: r.Get("/calendar", srv.HandleCalendarPage)
 
 	// Proxy endpoint for Limitless API (uses LIMITLESS_API_KEY env var)

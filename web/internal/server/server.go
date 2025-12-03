@@ -103,6 +103,24 @@ func NewWebServer(apiURL string) (*WebServer, error) {
 			
 			return fmt.Sprintf("%d:%02d", hours, minutes)
 		},
+		"sub": func(a, b int) int {
+			return a - b
+		},
+		"formatInt": func(value interface{}) string {
+			// Format integer values to avoid scientific notation in templates
+			switch v := value.(type) {
+			case int:
+				return fmt.Sprintf("%d", v)
+			case int64:
+				return fmt.Sprintf("%d", v)
+			case float64:
+				return fmt.Sprintf("%.0f", v)
+			case float32:
+				return fmt.Sprintf("%.0f", v)
+			default:
+				return fmt.Sprintf("%v", value)
+			}
+		},
 	}
 
 	for _, dir := range templateDirs {

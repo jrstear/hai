@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lifelog - Hai</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+    <nav>
+        <a href="/">Home</a>
+        <a href="/contacts">Contacts</a>
+        <a href="/lifelog">Lifelog</a>
+    </nav>
+    <main>
+        <div class="date-filter-row" style="margin-bottom: 16px; padding: 12px; background: #f5f5f5; border-radius: 4px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <label style="font-weight: 500; font-size: 14px;">Date:</label>
+            <input type="date" id="lifelog-date" value="{{.Date}}" style="padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+        </div>
+
+        <div class="lifelog-header">
+            <h1 style="margin: 0;">Lifelog</h1>
+            <div id="blockquote-count" style="font-size: 14px; color: #666; margin-left: 16px;">
+                {{if .LifelogData}}
+                    {{$total := index .LifelogData "total"}}
+                    {{if $total}}
+                        {{$total}} blockquote(s)
+                    {{else}}
+                        No blockquotes
+                    {{end}}
+                {{end}}
+            </div>
+        </div>
+
+        <div id="blockquotes-container" class="blockquotes-list">
+            {{if .LifelogData}}
+                {{$blockquotes := index .LifelogData "blockquotes"}}
+                {{if $blockquotes}}
+                    {{range $idx, $bq := $blockquotes}}
+                        {{$lifelogID := index $bq "lifelog_id"}}
+                        {{$lifelogTitle := index $bq "lifelog_title"}}
+                        {{$prevLifelogID := ""}}
+                        {{if gt $idx 0}}
+                            {{$prevBq := index $blockquotes (sub $idx 1)}}
+                            {{$prevLifelogID = index $prevBq "lifelog_id"}}
+                        {{end}}
+                        {{if ne $lifelogID $prevLifelogID}}
+                            {{if ne $prevLifelogID ""}}
+                                </tbody>
+                                </table>
+                            </div>
+                            {{end}}
+                            {{$convTimings := index $.LifelogData "conversationTimings"}}
+                            {{$timings := index $convTimings $lifelogID}}
+                            <div class="conversation-group" data-lifelog-id="{{$lifelogID}}">
+                                <div class="conversation-header">
+                                    <button class="conversation-play-button" 
+                                            data-lifelog-id="{{$lifelogID}}"
+                                            {{if $timings}}
+                                            data-start-ms="{{formatInt (index $timings "start_ms")}}"
+                                            data-end-ms="{{formatInt (index $timings "end_ms")}}"
+                                            {{else}}
+                                            data-start-ms=""
+                                            data-end-ms=""
+                                            {{end}}
+                                            title="Play entire conversation">
+                                        ▶
+                                    </button>
+                                    <h3>{{$lifelogTitle}}</h3>
+                                </div>
+                                <table class="blockquotes-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 50px;">Play</th>
+                                            <th style="width: 100px;">Time</th>
+                                            <th style="width: 80px;">Duration</th>
+                                            <th style="width: 120px;">Speaker</th>
+                                            <th>Transcript</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                        {{end}}
+                        {{$id := index $bq "id"}}
+                        {{$speakerName := index $bq "speaker_name"}}
+                        {{$content := index $bq "content"}}
+                        {{$startTime := index $bq "start_time"}}
+                        {{$duration := index $bq "duration"}}
+                        {{$startOffsetMs := index $bq "start_offset_ms"}}
+                        {{$endOffsetMs := index $bq "end_offset_ms"}}
+                        <tr class="blockquote-row" data-blockquote-id="{{$id}}">
+                            <td>
+                                <button class="play-button" data-blockquote-id="{{$id}}" 
+                                        data-start-ms="{{formatInt $startOffsetMs}}" 
+                                        data-end-ms="{{formatInt $endOffsetMs}}"
+                                        title="Play audio">
+                                    ▶
+                                </button>
+                            </td>
+                            <td class="blockquote-time">{{$startTime}}</td>
+                            <td class="blockquote-duration">{{formatDuration $duration}}</td>
+                            <td class="blockquote-speaker">{{$speakerName}}</td>
+                            <td class="blockquote-content">{{$content}}</td>
+                        </tr>
+                    {{end}}
+                    {{if $blockquotes}}
+                                </tbody>
+                            </table>
+                        </div>
+                    {{end}}
+                {{else}}
+                    <div class="blockquotes-empty">
+                        <p>No blockquotes found for this date.</p>
+                    </div>
+                {{end}}
+            {{end}}
+        </div>
+    </main>
+
+    <script>
+        // Date picker change handler
+        const dateInput = document.getElementById('lifelog-date');
+        if (dateInput) {
+            dateInput.addEventListener('change', function(e) {
+                const date = e.target.value;
+                if (date) {
+                    // Reload page with new date
+                    window.location.href = '/lifelog?date=' + date;
+                }
+            });
+        }
+
+        // Audio playback state
+        let currentAudio = null;
+        let currentPlayButton = null;
+        const audioKeyPrefix = 'lifelog';
+
+        // Format duration helper (seconds to MM:SS)
+        function formatDuration(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${String(secs).padStart(2, '0')}`;
+        }
+
+        // Play button click handler
+        function attachPlayHandlers() {
+            // Individual blockquote play buttons
+            const playButtons = document.querySelectorAll('.play-button');
+            playButtons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const blockquoteId = this.getAttribute('data-blockquote-id');
+                    const startMsStr = this.getAttribute('data-start-ms');
+                    const endMsStr = this.getAttribute('data-end-ms');
+                    
+                    // Parse values - use parseFloat first to handle scientific notation, then convert to int
+                    const startMs = Math.floor(parseFloat(startMsStr));
+                    const endMs = Math.floor(parseFloat(endMsStr));
+                    
+                    // Validate start/end MS values
+                    if (!startMsStr || !endMsStr || isNaN(startMs) || isNaN(endMs) || startMs <= 0 || endMs <= 0 || endMs <= startMs) {
+                        console.error('Invalid start/end MS values:', { startMsStr, endMsStr, startMs, endMs, button: this });
+                        if (!startMsStr || !endMsStr) {
+                            alert('Audio timing data not available for this blockquote.');
+                        } else {
+                            alert(`Invalid audio timing data for this blockquote.\nStart: ${startMsStr} (${startMs})\nEnd: ${endMsStr} (${endMs})`);
+                        }
+                        return;
+                    }
+                    
+                    playBlockquote(blockquoteId, startMs, endMs, this);
+                });
+            });
+            
+            // Conversation-wide play buttons
+            const conversationPlayButtons = document.querySelectorAll('.conversation-play-button');
+            conversationPlayButtons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const lifelogId = this.getAttribute('data-lifelog-id');
+                    const startMsStr = this.getAttribute('data-start-ms');
+                    const endMsStr = this.getAttribute('data-end-ms');
+                    
+                    // Parse values - use parseFloat first to handle scientific notation, then convert to int
+                    const startMs = Math.floor(parseFloat(startMsStr));
+                    const endMs = Math.floor(parseFloat(endMsStr));
+                    
+                    // Validate start/end MS values
+                    if (!startMsStr || !endMsStr || isNaN(startMs) || isNaN(endMs) || startMs <= 0 || endMs <= 0 || endMs <= startMs) {
+                        console.error('Invalid conversation start/end MS values:', { startMsStr, endMsStr, startMs, endMs, button: this });
+                        if (!startMsStr || !endMsStr) {
+                            alert('Audio timing data not available for this conversation.');
+                        } else {
+                            alert(`Invalid audio timing data for this conversation.\nStart: ${startMsStr} (${startMs})\nEnd: ${endMsStr} (${endMs})`);
+                        }
+                        return;
+                    }
+                    
+                    playBlockquote(lifelogId, startMs, endMs, this);
+                });
+            });
+        }
+
+        // Play a blockquote's audio
+        function playBlockquote(blockquoteId, startMs, endMs, button) {
+            const audioKey = `${audioKeyPrefix}:${blockquoteId}:${startMs}:${endMs}`;
+            
+            // If clicking the same button, toggle play/pause
+            if (currentPlayButton === button && currentAudio && !currentAudio.paused) {
+                currentAudio.pause();
+                button.textContent = '▶';
+                button.classList.remove('playing');
+                return;
+            }
+
+            // Stop current audio if playing
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio = null;
+            }
+
+            // Reset all buttons (both blockquote and conversation buttons)
+            document.querySelectorAll('.play-button, .conversation-play-button').forEach(btn => {
+                btn.textContent = '▶';
+                btn.classList.remove('playing');
+            });
+
+            // Create new audio element
+            const audio = new Audio();
+            const url = `/api/limitless/audio?startMs=${startMs}&endMs=${endMs}`;
+            audio.src = url;
+
+            // Update button state
+            button.textContent = '⏸';
+            button.classList.add('playing');
+            currentPlayButton = button;
+            currentAudio = audio;
+
+            // Handle audio end
+            audio.addEventListener('ended', function() {
+                button.textContent = '▶';
+                button.classList.remove('playing');
+                currentAudio = null;
+                currentPlayButton = null;
+            });
+
+            // Handle audio errors
+            audio.addEventListener('error', function(e) {
+                console.error('Audio playback error:', e);
+                button.textContent = '▶';
+                button.classList.remove('playing');
+                currentAudio = null;
+                currentPlayButton = null;
+                alert('Failed to play audio. Please check your connection and try again.');
+            });
+            
+            // Log for debugging
+            console.log('Playing audio:', { blockquoteId, startMs, endMs, url });
+
+            // Play audio
+            audio.play().catch(err => {
+                console.error('Failed to play audio:', err);
+                button.textContent = '▶';
+                button.classList.remove('playing');
+                currentAudio = null;
+                currentPlayButton = null;
+            });
+        }
+
+        // Attach handlers on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            attachPlayHandlers();
+        });
+    </script>
+</body>
+</html>
+

@@ -155,6 +155,52 @@ func (s *WebServer) HandleLimitlessAudio(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+// HandleLifelogPage handles GET /lifelog
+func (s *WebServer) HandleLifelogPage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	pageStart := time.Now()
+
+	// Get date from query parameter or use default
+	date := r.URL.Query().Get("date")
+	if date == "" {
+		date = "2025-11-22" // Default date
+	}
+
+	// Fetch blockquotes for the date
+	lifelogData, err := s.fetchLifelogs(date)
+	if err != nil {
+		log.Printf("[ERROR] Failed to fetch lifelogs: %v", err)
+		// Continue with empty data rather than failing
+		lifelogData = map[string]interface{}{
+			"date":        date,
+			"blockquotes": []interface{}{},
+			"grouped":     map[string]interface{}{},
+			"total":       0,
+		}
+	}
+
+	data := map[string]interface{}{
+		"Title":     "Lifelog - Hai",
+		"APIURL":    s.apiURL,
+		"Date":      date,
+		"LifelogData": lifelogData,
+	}
+
+	// Try to render lifelog.html
+	if err := s.renderTemplate(w, "lifelog.html", data); err != nil {
+		log.Printf("[ERROR] Failed to render lifelog template: %v", err)
+		http.Error(w, "Failed to render page", http.StatusInternalServerError)
+		return
+	}
+
+	elapsed := time.Since(pageStart)
+	log.Printf("[TIMING] HandleLifelogPage: %v", elapsed)
+}
+
 // renderSimplePage renders a simple HTML page (fallback when templates not found)
 func (s *WebServer) renderSimplePage(w http.ResponseWriter, title, content string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

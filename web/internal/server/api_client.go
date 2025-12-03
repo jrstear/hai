@@ -71,3 +71,34 @@ func (s *WebServer) fetchSpeakers() ([]map[string]interface{}, error) {
 	return result.Speakers, nil
 }
 
+// fetchLifelogs fetches blockquotes for a specific date from the API server
+func (s *WebServer) fetchLifelogs(date string) (map[string]interface{}, error) {
+	start := time.Now()
+	url := fmt.Sprintf("%s/api/lifelogs?date=%s", s.apiURL, date)
+
+	resp, err := s.apiClient.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch lifelogs: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	elapsed := time.Since(start)
+	total := 0
+	if t, ok := result["total"].(float64); ok {
+		total = int(t)
+	}
+	log.Printf("[TIMING] fetchLifelogs: %v (%d blockquotes)", elapsed, total)
+
+	return result, nil
+}
+
