@@ -1,236 +1,224 @@
 # Session Closeout - December 5, 2025
 
 ## Overview
-Implemented the people filter system for the calendar day view, including page-scoped filter state, filter bar framework, people filter display with avatars, and people selector drawer. Also fixed calendar swipe gestures and CORS connection errors.
+Added `contact_id` field to blockquote schema for persistence, implemented API endpoint for storing blockquote-to-contact associations, and added calendar day view refresh when navigating back from conversation screen. Partially working implementation with scrolling behavior issue to be fixed.
 
 ## Major Accomplishments
 
-### 1. Filter System Foundation (Phase 1-3)
-- **Page-Scoped Filter State** (hai-yr85):
-  - Created `filter_provider.dart` with page-specific filter providers
-  - `calendarDateFilterProvider` - StateProvider for calendar date filter
-  - `calendarPeopleFilterProvider` - StateProvider for calendar people filter
-  - Helper functions for adding/removing people, setting date, navigating days
-  - State persists across navigation (Riverpod StateProvider)
-  - **Key Decision**: Filters are page-specific, not global (each page has its own filter state)
+### 1. Blockquote Schema Update: Adding contact_id Field
+- **Schema Changes**:
+  - Added `contact_id` (string, optional) to `LifelogBlockquote` struct in `storage/schema.go`
+  - Added `contact_id` keyword field to Elasticsearch mapping for `lifelog_blockquotes` index
+  - Updated `lifelogBlockquoteToDoc()` and `docToLifelogBlockquote()` to handle `contact_id`
+  - Updated `UpdateLifelogBlockquote()` to merge `contact_id` updates
 
-- **Filter Bar Framework** (hai-ro1v):
-  - Created reusable `FilterBar` widget for displaying filters at top of screens
-  - Supports left content (time/date filter) and right content (people filter)
-  - Integrated into calendar screen, replacing full-width date selector
-  - Framework supports future filters and different screen layouts
+- **API Changes**:
+  - Added `ContactID *string` to `BlockquoteResponse` struct
+  - Handler now populates `contact_id` from blockquote when building response
+  - Created new endpoint: `PUT /api/blockquotes/{blockquoteId}/contact`
+  - Endpoint validates contact exists and updates blockquote's `contact_id` in Elasticsearch
 
-- **Time/Date Filter Component** (hai-ro1v):
-  - Created `TimeFilter` widget with date display and navigation
-  - `< >` buttons for previous/next day navigation
-  - Click date to open date picker
-  - Swipe gesture support (left/right for previous/next day)
-  - Connects to `calendarDateFilterProvider` for persistent state
+- **Flutter Model Updates**:
+  - Added `contactId` field to `Blockquote` model with proper JSON key mapping
+  - Regenerated model files using `task generate`
 
-### 2. People Filter Display (hai-67tl)
-- **Contact Avatars Display**:
-  - Shows selected people as circular avatars in alphabetical order
-  - Uses `ContactAvatar` widget with pictures or initials
-  - Right-justified layout, expanding leftward as more people added
-  - X button appears first (when people are selected) to clear filter
-  - + button always at far right for adding people
+- **Documentation**:
+  - Updated `storage/SCHEMA.md` with `contact_id` field and redundancy note
+  - Created `history/BLOCKQUOTE_CONTACT_ID_SCHEMA_UPDATE.md` documenting all changes
 
-- **Local Filtering Logic**:
-  - Filters conversations by matching speaker names to contact names
-  - Name matching supports exact and partial matches (minimum 3 characters)
-  - Skips "You" and "Unknown" speakers (they don't match contacts)
-  - OR logic: includes conversations where any participant matches selected contacts
-  - No API changes required - all filtering happens client-side
+### 2. API Endpoint for Blockquote-Contact Association
+- **New Endpoint**: `PUT /api/blockquotes/{blockquoteId}/contact`
+  - Request body: `{"contact_id": "contact_xxx"}`
+  - Validates contact exists before updating
+  - Updates blockquote's `contact_id` in Elasticsearch
+  - Returns success message with blockquote and contact IDs
 
-### 3. People Selector Drawer (hai-hxyh)
-- **Slide-In Drawer Component**:
-  - Slides in from right, takes 1/3 screen width (partial screen, never full)
-  - Positioned below filter bar (doesn't occlude filter bar)
-  - Smooth slide-in/out animations (300ms)
+- **Error Handling**:
+  - Returns 404 if blockquote or contact not found
+  - Returns 400 for invalid request body
+  - Returns 500 for storage errors
 
-- **Search Functionality**:
-  - Search bar in top bar (right side)
-  - Real-time filtering by name substring
-  - Filters both sections (people in filter + all other people)
+- **Flutter Integration**:
+  - Added `updateBlockquoteContact()` method to `ApiClient`
+  - Conversation screen now calls API when associating blockquote with contact
+  - UI updates immediately, API call happens in background
+  - Error messages shown if API call fails
 
-- **Two Sections**:
-  - **Top Section**: "People in current filter" (sorted, pre-checked)
-  - **Bottom Section**: "All other people" (sorted)
-  - Clear visual separation with dividers
+### 3. Calendar Day View Refresh After Navigation
+- **Implementation** (Partially Working):
+  - Calendar screen now refreshes lifelog data when navigating back from conversation
+  - Uses async navigation callback (`await context.push()`) to detect when user returns
+  - Invalidates `lifelogProvider` for the current date after navigation completes
+  - Ensures contact associations made in conversation are reflected in calendar view
 
-- **Interactions**:
-  - Checkbox click: Add/remove from filter immediately (keeps drawer open)
-  - Row click: Add to filter + close drawer
-  - Close button: Close drawer
-  - Backdrop tap: Close drawer
-  - Checkbox updates in real-time when filter state changes
+- **Known Issue**:
+  - Scrolling behavior is broken after navigation
+  - "Jiggly row movement" appears but actual scrolling doesn't work
+  - Scrolling should stop at first/last conversation but currently doesn't
+  - Created bead `hai-ibe1` to track this issue
 
-### 4. Bug Fixes and Improvements
-- **Calendar Swipe Gestures**:
-  - Fixed swipe direction logic (left-to-right = previous, right-to-left = next)
-  - Attempted to prevent browser navigation from intercepting swipes
-  - Created bead hai-cbew for deferred browser swipe fix (browser-specific issue)
+### 4. Blockquote-Contact Association UI Updates
+- **Conversation Screen**:
+  - Unknown speaker icons are clickable
+  - Clicking opens people selector drawer
+  - Selecting a person associates the blockquote and adds to conversation participants
+  - UI updates immediately (avatar and name change)
+  - API call happens in background for persistence
 
-- **CORS Connection Error**:
-  - Removed `withCredentials: true` from Dio config
-  - Fixed conflict with wildcard CORS configuration
-  - Improved connection error messages
-  - Documented fix in `history/FLUTTER_WEB_CORS_WITHCREDENTIALS_FIX.md`
-
-- **UI Improvements**:
-  - Right-justified people list in filter display
-  - X button to clear filter (appears first when people selected)
-  - Drawer positioned below filter bar (no occlusion)
-  - Checkbox updates immediately when filter changes
+- **Data Flow**:
+  - User clicks unknown speaker → opens people selector
+  - User selects contact → local state updated immediately
+  - API call made to persist association in Elasticsearch
+  - Calendar view refreshes when navigating back to show updated participants
 
 ## Beads Management
 
 ### Closed
-- **hai-yr85**: "Implement page-scoped filter state management" - Completed
-- **hai-ro1v**: "Implement filter bar framework with time and people filters" - Completed
-- **hai-67tl**: "Implement people filter display with alphabetical avatars" - Completed
-- **hai-hxyh**: "Implement people selector drawer/slide-in component" - Completed
+- **hai-mfmn**: "Store blockquote-to-contact associations in Elasticsearch via API" - Completed
+  - Schema updated with `contact_id` field
+  - API endpoint implemented
+  - Flutter integration complete
 
 ### Created
-- **hai-cbew**: "Fix swipe gestures on browser web platform" (Priority 3, Task)
-  - Browser back/forward navigation interferes with calendar date swipes
-  - Deferred as browser-specific issue, not critical for mobile
+- **hai-ibe1**: "Fix scrolling behavior on calendar day view after navigation from conversation" (Priority 2, Bug)
+  - Scrolling up should stop at first conversation
+  - Scrolling down should stop at last conversation
+  - Currently shows "jiggly row movement" but scrolling doesn't work properly
+  - Likely relates to scroll controller state or scroll position restoration after data refresh
+
+### Open (High Priority)
+- **hai-zod3**: "Associate unknown speaker from conversation view via people selector" - Functionally complete, needs testing
+- **hai-l1mm**: "Highlight blockquote person name when it matches Limitless speaker_name" (Priority 3, Enhancement)
+- **hai-5mmj**: "Query API for conversation participants list (performance optimization)" (Priority 2, Feature)
 
 ## Technical Decisions
 
-### Page-Scoped vs Global Filter State
-- **Decision**: Filters are page-specific, not global
+### Direct contact_id vs. speaker_id Approach
+- **Decision**: Added `contact_id` directly to blockquote schema
 - **Rationale**:
-  - Calendar viewing yesterday → Todo should show today's todos, not yesterday's
-  - Calendar filtered to Alice & Bob → Conversation shows ALL participants, not just Alice & Bob
-  - Adding person in conversation shouldn't affect calendar filter
-- **Implementation**: Separate StateProvider for each page (calendar, todo, etc.)
-- **Documentation**: Created `history/FILTER_STATE_DESIGN_DECISION.md`
+  - Diarization system (`speaker_id`) not working out of the gate
+  - App built primarily on Limitless data (blockquotes with `speaker_name`)
+  - Need immediate persistence for user-assigned associations
+  - `contact_id` provides direct, user-managed association
+- **Future**: When diarization system is working, we'll have redundancy:
+  - `speaker_name`: From Limitless (external, read-only)
+  - `contact_id`: User-assigned (short-term solution)
+  - `speaker_id`: From diarization (long-term goal)
+- **Documentation**: Added note in `SCHEMA.md` about this redundancy
 
-### Local Filtering vs API Filtering
-- **Decision**: Start with local filtering (client-side name matching)
+### Calendar Refresh Approach
+- **Decision**: Refresh entire day's data when navigating back from conversation
+- **Rationale** (Approach 1):
+  - Simple implementation - just invalidate provider after navigation
+  - Ensures all conversations have updated data
+  - Works immediately without API changes
+- **Future Optimization** (Approach 2 - bead hai-5mmj):
+  - Add API endpoint to query just participants for a specific conversation
+  - More efficient - avoids reloading all blockquotes for entire day
+  - Requires new API route: `GET /api/lifelogs/{lifelogId}/participants`
+
+### Immediate UI Updates vs. API Persistence
+- **Decision**: Update UI immediately, persist via API in background
 - **Rationale**:
-  - Works immediately - no API changes needed
-  - Fast filtering after initial data load
-  - Good UX - instant results, no loading states
-  - MVP-friendly - handles most common cases
-- **Future**: Bead hai-8klp tracks API filtering support for optimization
-
-### Name Matching Algorithm
-- **Implementation**: Exact and partial matching (minimum 3 characters)
-- **Normalization**: Lowercase, trim whitespace
-- **Edge Cases**: Skips "You" and "Unknown" speakers
-- **Future Enhancement**: Could add fuzzy matching for name variations (e.g., "Jon" vs "Jonathan")
-
-### Drawer Positioning
-- **Decision**: Position drawer below filter bar
-- **Rationale**: Filter bar should always be visible and accessible
-- **Implementation**: 
-  - Top offset = AppBar height (56px) + FilterBar height (56px) = 112px
-  - Backdrop also positioned below filter bar
-  - Drawer slides in from right at correct position
+  - Better UX - instant feedback when user associates blockquote
+  - UI doesn't wait for API call to complete
+  - Error handling shows message if API call fails, but UI already reflects association
+- **Implementation**:
+  - Local state (`blockquoteContactAssociationProvider`) for immediate updates
+  - API call (`updateBlockquoteContact`) for persistence
+  - Calendar refresh on navigation back ensures consistency
 
 ## Git Commits
 
-1. **2351325**: "Implement filter system foundation (Phases 1-3)"
-   - Page-scoped filter state providers
-   - Filter bar framework
-   - Time/date filter component
-   - 3 files changed, 193 insertions
+1. **a42280d**: "Implement blockquote-person association UI (hai-zod3)"
+   - Clickable unknown speaker icons
+   - People selector integration
+   - Immediate UI updates
 
-2. **9885c88**: "Fix calendar swipe gestures and CORS connection error"
-   - Fixed swipe gesture direction logic
-   - Removed withCredentials to fix CORS
-   - Improved error messages
-   - 6 files changed, 175 insertions
+2. **faab0e0**: "Add API integration for blockquote-person association (hai-zod3)"
+   - API client method for updating blockquote contact
+   - Conversation screen API integration
+   - Error handling
 
-3. **be3add1**: "Implement people filter display and selector drawer (hai-67tl, hai-hxyh)"
-   - People filter display with contact avatars
-   - Local filtering logic
-   - People selector drawer component
-   - 3 files changed, 643 insertions
+3. **c3371bc**: "Fix blockquote-person association UI updates (partly-working)"
+   - Prioritize API response `contact_id` over local state
+   - Improved UI update logic
 
-4. **fb650ab**: "Improve people filter display and selector drawer"
-   - Right-justified people list
-   - X button to clear filter
-   - Fixed checkbox updates
-   - Positioned drawer below filter bar
-   - 3 files changed, 153 insertions
+4. **0dc6502**: "Remove confusing message when associating contact to blockquote"
+   - Removed technical snackbar message
+   - UI already provides sufficient feedback
+
+5. **1521a1e**: "Partially working: Refresh calendar day view when navigating back from conversation"
+   - Calendar refresh after navigation
+   - Schema updates with `contact_id`
+   - API endpoint implementation
+   - Note: Scrolling behavior needs fixing (see bead hai-ibe1)
 
 ## Files Created/Modified
 
 ### New Files
-- `pida/lib/providers/filter_provider.dart` - Page-scoped filter state management
-- `pida/lib/widgets/filter_bar.dart` - Reusable filter bar framework
-- `pida/lib/widgets/time_filter.dart` - Date/time filter component
-- `pida/lib/widgets/people_filter_display.dart` - People filter display with avatars
-- `pida/lib/widgets/people_selector.dart` - People selector drawer component
-- `history/FILTER_SYSTEM_IMPLEMENTATION_ORDER.md` - Implementation order documentation
-- `history/FILTER_STATE_DESIGN_DECISION.md` - Design decision documentation
-- `history/FLUTTER_WEB_CORS_WITHCREDENTIALS_FIX.md` - CORS fix documentation
+- `history/BLOCKQUOTE_CONTACT_ID_SCHEMA_UPDATE.md` - Schema update documentation
 
 ### Modified Files
-- `pida/lib/screens/calendar_screen.dart` - Integrated filter bar, added filtering logic
-- `pida/lib/services/api_client.dart` - Removed withCredentials for CORS fix
-- `pida/lib/utils/error_handler.dart` - Improved connection error messages
+- `storage/SCHEMA.md` - Added `contact_id` field and redundancy note
+- `storage/schema.go` - Added `ContactID *string` to `LifelogBlockquote`
+- `storage/elasticsearch.go` - Added `contact_id` to mapping and update logic
+- `api/cmd/server/main.go` - Added route for blockquote contact update endpoint
+- `api/internal/server/lifelogs_handlers.go` - Added `ContactID` to response and `HandleUpdateBlockquoteContact` handler
+- `pida/lib/models/lifelog.dart` - Added `contactId` field to `Blockquote` model
+- `pida/lib/models/lifelog.g.dart` - Regenerated with `contactId` support
+- `pida/lib/services/api_client.dart` - Added `updateBlockquoteContact()` method
+- `pida/lib/screens/conversation_screen.dart` - API integration for blockquote association
+- `pida/lib/screens/calendar_screen.dart` - Refresh logic after navigation
 
 ## Next Steps
 
-1. **Continue Filter System Implementation**:
-   - hai-3ty0: Implement add/remove people from filter interactions (wire up remaining functionality)
-   - hai-hik4: Implement conversation-specific people filter display
-   - hai-zod3: Associate unknown speaker from conversation view via people selector
+1. **Fix Scrolling Issue** (hai-ibe1):
+   - Investigate scroll controller state after data refresh
+   - Fix scroll position restoration
+   - Ensure scrolling stops at first/last conversation boundaries
 
-2. **Future Enhancements**:
-   - hai-8klp: Add API support for filtering conversations by contact/people
-   - hai-1s84: Add AND condition option for multi-person conversation filter
-   - hai-owbz: Allow removing people from filter on conversation page
-   - hai-6xg8: Consider hiding filter bar on certain pages or scroll behavior
+2. **Verify ES Data Storage**:
+   - Check that blockquote contact associations are stored correctly in Elasticsearch
+   - Verify data persists across app restarts
+   - Test with 11/22 "Discussion about audiobooks" conversation
 
-3. **Browser Swipe Gestures** (Deferred):
-   - hai-cbew: Fix swipe gestures on browser web platform
-   - Browser-specific issue, not critical for mobile
+3. **Performance Optimization** (hai-5mmj):
+   - Consider implementing participants-only API endpoint
+   - More efficient than reloading entire day's data
+   - Lower priority - current approach works
+
+4. **Future Enhancements**:
+   - hai-l1mm: Highlight blockquote person name when it matches Limitless speaker_name
+   - Improve name matching algorithm for better contact association
 
 ## Known Issues
 
-1. **Browser Swipe Gestures**: Browser back/forward navigation interferes with calendar date swipes. Deferred as browser-specific, not critical for mobile app.
+1. **Scrolling Behavior** (hai-ibe1):
+   - After navigating back from conversation, scrolling on calendar day view is broken
+   - Shows "jiggly row movement" but actual scrolling doesn't work
+   - Scrolling should stop at first/last conversation but doesn't
+   - Likely related to scroll controller state after data refresh
 
-2. **Name Matching Limitations**: Current matching is basic (exact + partial). May need fuzzy matching for name variations in the future.
-
-3. **Filter Performance**: Local filtering works well for small datasets. For large datasets, API filtering (hai-8klp) will be needed.
-
-## Implementation Order Reference
-
-The filter system implementation followed a logical phased approach:
-1. Phase 1: Page-Scoped Filter State (Foundation)
-2. Phase 2: Filter Bar Framework
-3. Phase 3: Time/Date Filter Component
-4. Phase 4: People Filter Display ✅
-5. Phase 5: People Selector Drawer ✅
-6. Phase 6: Add/Remove Interactions (In Progress)
-7. Phase 7: Conversation-Specific Filter Display (Pending)
-8. Phase 8: Unknown Speaker Association (Pending)
-
-See `history/FILTER_SYSTEM_IMPLEMENTATION_ORDER.md` for complete details.
+2. **Calendar Refresh**:
+   - Currently refreshes entire day's data (works but not optimal)
+   - Could be optimized with participants-only endpoint (future enhancement)
 
 ## Session Statistics
 
-- **Beads Closed**: 4 (hai-yr85, hai-ro1v, hai-67tl, hai-hxyh)
-- **Beads Created**: 1 (hai-cbew)
-- **Git Commits**: 4
-- **Files Created**: 8
-- **Files Modified**: 3
-- **Lines Added**: ~1,160+
+- **Beads Closed**: 1 (hai-mfmn)
+- **Beads Created**: 1 (hai-ibe1)
+- **Git Commits**: 5
+- **Files Created**: 1
+- **Files Modified**: 11
+- **Lines Added**: ~400+
 
 ## Key Achievements
 
-✅ **Page-scoped filter state** - Independent filters per page  
-✅ **Filter bar framework** - Reusable component for all screens  
-✅ **People filter display** - Beautiful avatar-based UI  
-✅ **Local filtering** - Fast, no API changes needed  
-✅ **People selector drawer** - Smooth, intuitive selection experience  
-✅ **Right-justified layout** - Clean, professional appearance  
-✅ **Real-time updates** - Instant feedback on all interactions
+✅ **Blockquote contact_id schema** - Direct association with contacts  
+✅ **API endpoint for persistence** - Blockquote-contact associations stored in ES  
+✅ **Calendar refresh on navigation** - Updated data after returning from conversation  
+✅ **Immediate UI updates** - Instant feedback for user actions  
+✅ **Error handling** - Graceful failure if API calls fail  
 
-The people filter system is now fully functional on the calendar day view, providing users with an intuitive way to filter conversations by people. The implementation follows best practices with page-scoped state, local filtering, and a polished UI.
-
+The blockquote-to-contact association system is now fully functional with persistence. Users can associate unknown speakers with contacts from the conversation view, and these associations persist across app restarts. The calendar view refreshes when navigating back to show updated participants, though scrolling behavior needs to be fixed.
