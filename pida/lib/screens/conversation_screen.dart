@@ -7,6 +7,7 @@ import 'package:pida/providers/contacts_provider.dart';
 import 'package:pida/providers/filter_provider.dart';
 import 'package:pida/providers/lifelog_provider.dart';
 import 'package:pida/services/audio_service.dart';
+import 'package:pida/services/api_client.dart';
 import 'package:pida/widgets/conversation_participants_display.dart';
 import 'package:pida/widgets/error_widget.dart';
 import 'package:pida/widgets/filter_bar.dart';
@@ -288,19 +289,68 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       context: context,
       participantContactIds: participantContactIds,
       contextType: 'conversation',
-      onContactSelected: (contactId, isSelected) {
+      onContactSelected: (contactId, isSelected) async {
         if (isSelected) {
           // Add to conversation participants if not already there
           addPersonToConversationParticipants(ref, lifelogId, contactId);
           
-          // TODO: Implement API call to associate blockquote's speaker with contact
-          // This requires:
-          // 1. Finding/getting the speaker_id for this blockquote
-          // 2. Calling POST /api/contacts/{contactId}/associate-speaker with speaker_id
-          // For now, we just add to conversation participants
+          // Associate blockquote's speaker with contact via API
+          await _associateBlockquoteSpeaker(ref, context, blockquote, contactId);
         }
       },
     );
+  }
+
+  /// Associate blockquote's speaker with a contact via API
+  Future<void> _associateBlockquoteSpeaker(
+    WidgetRef ref,
+    BuildContext context,
+    Blockquote blockquote,
+    String contactId,
+  ) async {
+    // Check if blockquote has a speaker_id (it may not be matched to a segment yet)
+    if (blockquote.speakerId == null || blockquote.speakerId!.isEmpty) {
+      // Blockquote hasn't been matched to a segment yet - can't associate
+      // Show a message to the user
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This blockquote hasn\'t been matched to a speaker yet. '
+              'Association will be available after audio processing completes.',
+            ),
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Call API to associate speaker with contact
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      await apiClient.associateSpeaker(contactId, blockquote.speakerId!);
+      
+      // Show success message
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Speaker associated with contact successfully'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (error) {
+      // Show error message
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to associate speaker: ${error.toString()}'),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildBlockquote(

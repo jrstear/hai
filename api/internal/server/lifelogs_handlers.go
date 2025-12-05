@@ -13,6 +13,7 @@ type BlockquoteResponse struct {
 	LifelogID   string  `json:"lifelog_id"`
 	LifelogTitle string `json:"lifelog_title,omitempty"`
 	SpeakerName string  `json:"speaker_name"`
+	SpeakerID   *string `json:"speaker_id,omitempty"` // Optional: Global speaker ID (populated after matching)
 	Content     string  `json:"content"`
 	StartTime   string  `json:"start_time"`   // Formatted time (HH:MM:SS)
 	EndTime     string  `json:"end_time"`     // Formatted time (HH:MM:SS)
@@ -89,6 +90,7 @@ func (s *APIServer) HandleGetLifelogs(w http.ResponseWriter, r *http.Request) {
 			LifelogID:     bq.LifelogID,
 			LifelogTitle:  lifelogTitles[bq.LifelogID],
 			SpeakerName:   bq.SpeakerName,
+			SpeakerID:     bq.SpeakerID, // Optional: Global speaker ID (if matched to segment)
 			Content:       bq.Content,
 			StartTime:     startTimeStr,
 			EndTime:       endTimeStr,
