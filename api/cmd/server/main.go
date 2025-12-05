@@ -70,6 +70,11 @@ func main() {
 		r.Route("/lifelogs", func(r chi.Router) {
 			r.Get("/", srv.HandleGetLifelogs)
 		})
+
+		// Limitless API proxy endpoint
+		r.Route("/limitless", func(r chi.Router) {
+			r.Get("/audio", srv.HandleLimitlessAudioProxy)
+		})
 	})
 
 	// Start server

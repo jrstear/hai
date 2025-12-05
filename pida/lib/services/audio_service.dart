@@ -100,9 +100,10 @@ class AudioService {
       _startMs = startMs;
       _endMs = endMs;
 
-      // Construct audio URL
-      // For web, use our API proxy endpoint (handles API key server-side)
-      // For mobile, we can try direct Limitless API (if headers are supported)
+      // Construct audio URL - call Limitless API directly
+      // For web: Browsers can't set custom headers on audio requests, so we need proxy
+      // For mobile: Can potentially set headers, but audioplayers may not support it
+      // Solution: Use proxy for web, try direct for mobile (may need proxy there too)
       final url = kIsWeb
           ? _buildProxyUrl(startMs: startMs, endMs: endMs)
           : _buildLimitlessApiUrl(startMs: startMs, endMs: endMs);
