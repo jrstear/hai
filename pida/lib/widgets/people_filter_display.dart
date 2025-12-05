@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pida/models/contact.dart';
+import 'package:pida/providers/contacts_provider.dart';
 import 'package:pida/providers/filter_provider.dart';
+import 'package:pida/widgets/contact_avatar.dart';
 
 /// People filter display widget
 /// 
 /// Displays the selected people (contacts) as avatars in alphabetical order.
-/// Currently a placeholder - will be fully implemented in Phase 4 with:
 /// - Contact avatars (using ContactAvatar widget)
-/// - Alphabetical sorting
-/// - Add button (+)
-/// - Smart wrapping logic
-/// - Click handlers for adding/removing people
+/// - Alphabetical sorting by name (first,family name)
+/// - Starts at right edge, expands leftward
+/// - Always shows + button at far right
+/// - Handles wrapping for different screen sizes
 class PeopleFilterDisplay extends ConsumerWidget {
   /// Optional callback when + button is tapped
   final VoidCallback? onAddTap;
@@ -22,37 +24,113 @@ class PeopleFilterDisplay extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selectedPeople = ref.watch(calendarPeopleFilterProvider);
+    final selectedPeopleIds = ref.watch(calendarPeopleFilterProvider);
+    final contactsAsync = ref.watch(contactsProvider);
 
-    // Placeholder: Show count and + button
-    // Phase 4 will replace this with actual contact avatars
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Selected people count (placeholder)
-        if (selectedPeople.isNotEmpty)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '${selectedPeople.length}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.bold,
+    return contactsAsync.when(
+      data: (contactListResponse) {
+        // Get contact details for selected IDs
+        final selectedContacts = selectedPeopleIds
+            .map((id) => contactListResponse.contacts.firstWhere(
+                  (contact) => contact.id == id,
+                  orElse: () => Contact(
+                    id: id,
+                    name: 'Unknown',
                   ),
+                ))
+            .toList();
+
+        // Sort alphabetically by name (first,family name)
+        selectedContacts.sort((a, b) {
+          // Compare by full name
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+
+        // Build avatar row (right-aligned, expanding leftward)
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            // Avatars (right to left, so reverse the list)
+            ...selectedContacts.reversed.map((contact) {
+              return Container(
+                margin: const EdgeInsets.only(right: 4),
+                child: ContactAvatar(
+                  name: contact.name,
+                  pictureUrl: contact.pictureUrl,
+                  favoriteColor: contact.favoriteColor,
+                  size: 32,
+                ),
+              );
+            }),
+            
+            // Add button (always at far right)
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline),
+              onPressed: onAddTap,
+              tooltip: 'Add people to filter',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
             ),
+          ],
+        );
+      },
+      loading: () => Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          if (selectedPeopleIds.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${selectedPeopleIds.length}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ),
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            onPressed: onAddTap,
+            tooltip: 'Add people to filter',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
           ),
-        
-        // Add button
-        IconButton(
-          icon: const Icon(Icons.add_circle_outline),
-          onPressed: onAddTap,
-          tooltip: 'Add people to filter',
-        ),
-      ],
+        ],
+      ),
+      error: (error, stack) => Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          if (selectedPeopleIds.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${selectedPeopleIds.length}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onErrorContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ),
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            onPressed: onAddTap,
+            tooltip: 'Add people to filter',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+        ],
+      ),
     );
   }
 }

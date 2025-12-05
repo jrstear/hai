@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:pida/models/contact.dart';
+import 'package:pida/providers/contacts_provider.dart';
 import 'package:pida/providers/filter_provider.dart';
 import 'package:pida/providers/lifelog_provider.dart';
 import 'package:pida/routes/app_router.dart';
@@ -9,6 +11,7 @@ import 'package:pida/widgets/error_widget.dart';
 import 'package:pida/widgets/filter_bar.dart';
 import 'package:pida/widgets/loading_widget.dart';
 import 'package:pida/widgets/people_filter_display.dart';
+import 'package:pida/widgets/people_selector.dart';
 import 'package:pida/widgets/speaker_avatar.dart';
 import 'package:pida/widgets/time_filter.dart';
 
@@ -65,8 +68,98 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     });
   }
 
+  /// Open people selector drawer
+  void _openPeopleSelector(BuildContext context, WidgetRef ref) {
+    final selectedPeopleIds = ref.read(calendarPeopleFilterProvider);
+
+    showPeopleSelector(
+      context: context,
+      selectedContactIds: selectedPeopleIds,
+      contextType: 'filter',
+      onContactSelected: (contactId, isSelected) {
+        if (isSelected) {
+          addPersonToCalendarFilter(ref, contactId);
+        } else {
+          removePersonFromCalendarFilter(ref, contactId);
+        }
+      },
+    );
+  }
+
   String _formatDate(DateTime date) {
     return DateFormat('yyyy-MM-dd').format(date);
+  }
+
+  /// Filter conversations by selected people (local filtering)
+  /// 
+  /// Matches speaker names to contact IDs and filters conversations
+  /// to only include those where at least one participant matches
+  /// a selected contact (OR logic).
+  List<ConversationSummary> _filterConversationsByPeople(
+    List<ConversationSummary> summaries,
+    List<String> selectedPeopleIds,
+    List<Contact> contacts,
+  ) {
+    // If no people selected, return all conversations
+    if (selectedPeopleIds.isEmpty) {
+      return summaries;
+    }
+    
+    // Build mapping: contact ID -> contact name (normalized for matching)
+    final contactIdToName = <String, String>{};
+    for (final contact in contacts) {
+      if (selectedPeopleIds.contains(contact.id)) {
+        contactIdToName[contact.id] = _normalizeName(contact.name);
+      }
+    }
+
+    // Filter conversations: include if any participant matches a selected contact
+    return summaries.where((summary) {
+      // Check if any participant name matches any selected contact name
+      for (final participantName in summary.participantNames) {
+        final normalizedParticipant = _normalizeName(participantName);
+        
+        // Skip "You" and "Unknown" - they don't match contacts
+        if (normalizedParticipant == 'you' || normalizedParticipant == 'unknown') {
+          continue;
+        }
+
+        // Check if this participant name matches any selected contact
+        for (final contactName in contactIdToName.values) {
+          if (_namesMatch(normalizedParticipant, contactName)) {
+            return true; // Match found, include this conversation
+          }
+        }
+      }
+      return false; // No match found, exclude this conversation
+    }).toList();
+  }
+
+  /// Normalize a name for matching (lowercase, trim whitespace)
+  String _normalizeName(String name) {
+    return name.trim().toLowerCase();
+  }
+
+  /// Check if two names match (exact match or fuzzy match)
+  /// 
+  /// Currently does exact normalized match. Can be enhanced later
+  /// for fuzzy matching (e.g., "Jon" vs "Jonathan").
+  bool _namesMatch(String name1, String name2) {
+    // Exact match
+    if (name1 == name2) return true;
+
+    // Check if one name contains the other (for partial matches)
+    // e.g., "jon stearley" contains "jon"
+    if (name1.contains(name2) || name2.contains(name1)) {
+      // Only allow if the shorter name is at least 3 characters
+      // to avoid false matches like "a" matching "alice"
+      final shorter = name1.length < name2.length ? name1 : name2;
+      if (shorter.length >= 3) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   // Format time to 12-hour AM/PM format in local timezone
@@ -82,7 +175,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final period = hour >= 12 ? 'PM' : 'AM';
     final hour12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
 
-    return '${hour12}:${minute.toString().padLeft(2, '0')} $period';
+    return '$hour12:${minute.toString().padLeft(2, '0')} $period';
   }
 
   @override
@@ -90,6 +183,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final selectedDate = ref.watch(calendarDateFilterProvider) ?? DateTime.now();
     final dateStr = _formatDate(selectedDate);
     final lifelogAsync = ref.watch(lifelogProvider(dateStr));
+    final contactsAsync = ref.watch(contactsProvider);
+    final selectedPeopleIds = ref.watch(calendarPeopleFilterProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -134,7 +229,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               leftContent: TimeFilter(
                 onDateChanged: _onDateChanged,
               ),
-              rightContent: const PeopleFilterDisplay(),
+              rightContent: PeopleFilterDisplay(
+                onAddTap: () => _openPeopleSelector(context, ref),
+              ),
             ),
 
             // Conversations list
@@ -142,12 +239,33 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               child: lifelogAsync.when(
                 data: (response) {
                   final summaries = extractConversationSummaries(response);
+                  
+                  // Apply people filter (local filtering)
+                  // Filter conversations based on selected people
+                  final filteredSummaries = contactsAsync.when(
+                    data: (contactListResponse) {
+                      return _filterConversationsByPeople(
+                        summaries,
+                        selectedPeopleIds,
+                        contactListResponse.contacts,
+                      );
+                    },
+                    loading: () => summaries, // Show all while contacts load
+                    error: (error, stack) => summaries, // Show all if contacts fail to load
+                  );
 
-                  if (summaries.isEmpty) {
-                    return const EmptyStateWidget(
-                      message: 'No conversations found for this date',
-                      icon: Icons.chat_bubble_outline,
-                    );
+                  if (filteredSummaries.isEmpty) {
+                    if (selectedPeopleIds.isNotEmpty) {
+                      return EmptyStateWidget(
+                        message: 'No conversations found for this date with selected people',
+                        icon: Icons.chat_bubble_outline,
+                      );
+                    } else {
+                      return const EmptyStateWidget(
+                        message: 'No conversations found for this date',
+                        icon: Icons.chat_bubble_outline,
+                      );
+                    }
                   }
 
                   // Scroll to bottom after data loads (snap to latest conversation)
@@ -155,7 +273,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                     _scrollToBottom();
                   });
 
-                  return _buildConversationsList(context, summaries);
+                  return _buildConversationsList(context, filteredSummaries);
                 },
                 loading: () =>
                     const LoadingWidget(message: 'Loading conversations...'),
@@ -166,7 +284,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               ),
             ),
           ],
-        ),
         ),
       ),
     );
