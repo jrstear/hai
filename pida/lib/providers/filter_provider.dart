@@ -90,3 +90,33 @@ void goToNextCalendarDay(WidgetRef ref) {
 // final todoDateFilterProvider = StateProvider<DateTime?>((ref) => null);
 // final todoPeopleFilterProvider = StateProvider<List<String>>((ref) => []);
 
+/// Conversation participants provider (keyed by lifelogId)
+/// 
+/// Stores a list of contact IDs for each conversation.
+/// This is conversation-specific data (not a filter).
+/// Used to track which contacts are associated with a conversation.
+/// State persists across navigation (Riverpod StateProvider survives navigation).
+final conversationParticipantsProvider = StateProvider.family<List<String>, String>(
+  (ref, lifelogId) => [],
+);
+
+/// Helper function to add a person to conversation participants
+void addPersonToConversationParticipants(WidgetRef ref, String lifelogId, String contactId) {
+  final currentParticipants = ref.read(conversationParticipantsProvider(lifelogId));
+  if (!currentParticipants.contains(contactId)) {
+    ref.read(conversationParticipantsProvider(lifelogId).notifier).state = [
+      ...currentParticipants,
+      contactId,
+    ];
+  }
+}
+
+/// Helper function to remove a person from conversation participants
+void removePersonFromConversationParticipants(WidgetRef ref, String lifelogId, String contactId) {
+  final currentParticipants = ref.read(conversationParticipantsProvider(lifelogId));
+  if (currentParticipants.contains(contactId)) {
+    ref.read(conversationParticipantsProvider(lifelogId).notifier).state =
+        currentParticipants.where((id) => id != contactId).toList();
+  }
+}
+

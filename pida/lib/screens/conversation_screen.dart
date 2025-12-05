@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:pida/models/contact.dart';
 import 'package:pida/models/lifelog.dart';
+import 'package:pida/providers/contacts_provider.dart';
+import 'package:pida/providers/filter_provider.dart';
 import 'package:pida/providers/lifelog_provider.dart';
 import 'package:pida/services/audio_service.dart';
+import 'package:pida/widgets/conversation_participants_display.dart';
 import 'package:pida/widgets/error_widget.dart';
 import 'package:pida/widgets/filter_bar.dart';
 import 'package:pida/widgets/loading_widget.dart';
+import 'package:pida/widgets/people_selector.dart';
 import 'package:pida/widgets/speaker_avatar.dart';
 
 /// Conversation screen (Single conversation view)
@@ -25,7 +30,7 @@ import 'package:pida/widgets/speaker_avatar.dart';
 /// - List of participants (contact pictures)
 /// - Blockquotes/transcripts in chronological order
 /// - Audio playback controls for each segment
-class ConversationScreen extends ConsumerWidget {
+class ConversationScreen extends ConsumerStatefulWidget {
   final String? lifelogId;
   final String? date; // Date in YYYY-MM-DD format
 
@@ -36,8 +41,110 @@ class ConversationScreen extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (lifelogId == null) {
+  ConsumerState<ConversationScreen> createState() => _ConversationScreenState();
+}
+
+class _ConversationScreenState extends ConsumerState<ConversationScreen> {
+  String? _initializedLifelogId;
+  
+  @override
+  void didUpdateWidget(ConversationScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reset initialization flag if lifelogId changed
+    if (oldWidget.lifelogId != widget.lifelogId) {
+      _initializedLifelogId = null;
+    }
+  }
+
+  /// Initialize conversation participants from blockquotes
+  /// Matches speaker names to contact IDs and stores them in the provider
+  void _initializeParticipants(
+    WidgetRef ref,
+    String lifelogId,
+    List<String> participantNames,
+    List<Contact> contacts,
+  ) {
+    // Skip if already initialized for this conversation
+    if (_initializedLifelogId == lifelogId) return;
+    
+    final currentParticipants = ref.read(conversationParticipantsProvider(lifelogId));
+    if (currentParticipants.isNotEmpty) {
+      _initializedLifelogId = lifelogId;
+      return; // Already initialized
+    }
+
+    // Match speaker names to contact IDs
+    final matchedContactIds = <String>[];
+    for (final participantName in participantNames) {
+      final normalizedName = _normalizeName(participantName);
+      
+      // Skip "You" and "Unknown"
+      if (normalizedName == 'you' || normalizedName == 'unknown') {
+        continue;
+      }
+
+      // Try to find matching contact
+      for (final contact in contacts) {
+        final contactName = _normalizeName(contact.name);
+        if (_namesMatch(normalizedName, contactName)) {
+          if (!matchedContactIds.contains(contact.id)) {
+            matchedContactIds.add(contact.id);
+          }
+          break;
+        }
+      }
+    }
+
+    // Store matched contact IDs in provider
+    if (matchedContactIds.isNotEmpty) {
+      ref.read(conversationParticipantsProvider(lifelogId).notifier).state = matchedContactIds;
+    }
+    
+    _initializedLifelogId = lifelogId;
+  }
+
+  /// Normalize a name for matching (lowercase, trim whitespace)
+  String _normalizeName(String name) {
+    return name.trim().toLowerCase();
+  }
+
+  /// Check if two names match (exact match or fuzzy match)
+  bool _namesMatch(String name1, String name2) {
+    // Exact match
+    if (name1 == name2) return true;
+
+    // Check if one name contains the other (for partial matches)
+    if (name1.contains(name2) || name2.contains(name1)) {
+      final shorter = name1.length < name2.length ? name1 : name2;
+      if (shorter.length >= 3) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /// Open people selector for conversation
+  void _openPeopleSelector(BuildContext context, WidgetRef ref, String lifelogId) {
+    final participantContactIds = ref.read(conversationParticipantsProvider(lifelogId));
+
+    showPeopleSelector(
+      context: context,
+      participantContactIds: participantContactIds,
+      contextType: 'conversation',
+      onContactSelected: (contactId, isSelected) {
+        if (isSelected) {
+          addPersonToConversationParticipants(ref, lifelogId, contactId);
+        } else {
+          removePersonFromConversationParticipants(ref, lifelogId, contactId);
+        }
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.lifelogId == null) {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Conversation'),
@@ -49,8 +156,9 @@ class ConversationScreen extends ConsumerWidget {
     }
 
     // If date is provided, use it; otherwise default to today
-    final dateStr = date ?? DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final dateStr = widget.date ?? DateFormat('yyyy-MM-dd').format(DateTime.now());
     final lifelogAsync = ref.watch(lifelogProvider(dateStr));
+    final contactsAsync = ref.watch(contactsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -59,7 +167,7 @@ class ConversationScreen extends ConsumerWidget {
       body: lifelogAsync.when(
         data: (response) {
           // Find the conversation with matching lifelogId
-          final blockquotes = response.grouped[lifelogId!];
+          final blockquotes = response.grouped[widget.lifelogId!];
 
           if (blockquotes == null || blockquotes.isEmpty) {
             return ErrorDisplayWidget(
@@ -73,7 +181,7 @@ class ConversationScreen extends ConsumerWidget {
             ..sort((a, b) => a.startTime.compareTo(b.startTime));
 
           final firstBlockquote = sortedBlockquotes.first;
-          final timing = response.conversationTimings[lifelogId!];
+          final timing = response.conversationTimings[widget.lifelogId!];
 
           // Get unique participant names
           final participantNames = blockquotes
@@ -81,13 +189,36 @@ class ConversationScreen extends ConsumerWidget {
               .toSet()
               .toList();
 
-          return _buildConversationContent(
-            context,
-            ref,
-            firstBlockquote,
-            sortedBlockquotes,
-            participantNames,
-            timing,
+          // Initialize conversation participants from blockquotes (match speaker names to contacts)
+          return contactsAsync.when(
+            data: (contactListResponse) {
+              _initializeParticipants(
+                ref,
+                widget.lifelogId!,
+                participantNames,
+                contactListResponse.contacts,
+              );
+              
+              return _buildConversationContent(
+                context,
+                ref,
+                widget.lifelogId!,
+                firstBlockquote,
+                sortedBlockquotes,
+                participantNames,
+                timing,
+              );
+            },
+            loading: () => const LoadingWidget(message: 'Loading contacts...'),
+            error: (error, stack) => _buildConversationContent(
+              context,
+              ref,
+              widget.lifelogId!,
+              firstBlockquote,
+              sortedBlockquotes,
+              participantNames,
+              timing,
+            ),
           );
         },
         loading: () => const LoadingWidget(message: 'Loading conversation...'),
@@ -102,63 +233,26 @@ class ConversationScreen extends ConsumerWidget {
   Widget _buildConversationContent(
     BuildContext context,
     WidgetRef ref,
+    String lifelogId,
     Blockquote firstBlockquote,
     List<Blockquote> blockquotes,
     List<String> participantNames,
     ConversationTiming? timing,
   ) {
+    final participantContactIds = ref.watch(conversationParticipantsProvider(lifelogId));
+    final conversationTitle = firstBlockquote.lifelogTitle ?? 'Conversation';
+
     return Column(
       children: [
-        // Header with title and participants
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border(
-              bottom: BorderSide(
-                color: Theme.of(context).dividerColor,
-                width: 1,
-              ),
-            ),
+        // Filter bar with title and participants
+        FilterBar(
+          leftContent: _buildConversationTitle(context, conversationTitle),
+          rightContent: ConversationParticipantsDisplay(
+            lifelogId: lifelogId,
+            participantContactIds: participantContactIds,
+            onAddTap: () => _openPeopleSelector(context, ref, lifelogId),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (firstBlockquote.lifelogTitle != null)
-                Text(
-                  firstBlockquote.lifelogTitle!,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Text(
-                    _formatTimeTo12Hour(
-                        firstBlockquote.startTime, firstBlockquote.startOffsetMs),
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: false,
-                  ),
-                  const SizedBox(width: 16),
-                  ...participantNames.map((name) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: SpeakerAvatar(
-                        speakerName: name,
-                        size: 32,
-                      ),
-                    );
-                  }),
-                ],
-              ),
-            ],
-          ),
+          showBorder: true,
         ),
 
         // Blockquotes/transcripts
@@ -168,7 +262,7 @@ class ConversationScreen extends ConsumerWidget {
             itemCount: blockquotes.length,
             itemBuilder: (context, index) {
               final blockquote = blockquotes[index];
-              return _buildBlockquote(context, blockquote, ref);
+              return _buildBlockquote(context, blockquote, ref, lifelogId);
             },
           ),
         ),
@@ -176,8 +270,43 @@ class ConversationScreen extends ConsumerWidget {
     );
   }
 
+  /// Check if a speaker name is unknown
+  bool _isUnknownSpeaker(String speakerName) {
+    return speakerName.trim().toLowerCase() == 'unknown';
+  }
+
+  /// Handle unknown speaker click - open people selector to associate
+  void _handleUnknownSpeakerClick(
+    BuildContext context,
+    WidgetRef ref,
+    Blockquote blockquote,
+    String lifelogId,
+  ) {
+    final participantContactIds = ref.read(conversationParticipantsProvider(lifelogId));
+
+    showPeopleSelector(
+      context: context,
+      participantContactIds: participantContactIds,
+      contextType: 'conversation',
+      onContactSelected: (contactId, isSelected) {
+        if (isSelected) {
+          // Add to conversation participants if not already there
+          addPersonToConversationParticipants(ref, lifelogId, contactId);
+          
+          // TODO: Implement API call to associate blockquote's speaker with contact
+          // This requires:
+          // 1. Finding/getting the speaker_id for this blockquote
+          // 2. Calling POST /api/contacts/{contactId}/associate-speaker with speaker_id
+          // For now, we just add to conversation participants
+        }
+      },
+    );
+  }
+
   Widget _buildBlockquote(
-      BuildContext context, Blockquote blockquote, WidgetRef ref) {
+      BuildContext context, Blockquote blockquote, WidgetRef ref, String lifelogId) {
+    final isUnknown = _isUnknownSpeaker(blockquote.speakerName);
+    
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
@@ -185,10 +314,25 @@ class ConversationScreen extends ConsumerWidget {
         children: [
           Row(
             children: [
-              SpeakerAvatar(
-                speakerName: blockquote.speakerName,
-                size: 24,
-              ),
+              // Make speaker avatar clickable if unknown
+              isUnknown
+                  ? InkWell(
+                      onTap: () => _handleUnknownSpeakerClick(
+                        context,
+                        ref,
+                        blockquote,
+                        lifelogId,
+                      ),
+                      borderRadius: BorderRadius.circular(12), // Half of size for circle
+                      child: SpeakerAvatar(
+                        speakerName: blockquote.speakerName,
+                        size: 24,
+                      ),
+                    )
+                  : SpeakerAvatar(
+                      speakerName: blockquote.speakerName,
+                      size: 24,
+                    ),
               const SizedBox(width: 8),
               Text(
                 blockquote.speakerName,
@@ -227,6 +371,18 @@ class ConversationScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  /// Build conversation title widget for filter bar
+  Widget _buildConversationTitle(BuildContext context, String title) {
+    return Text(
+      title,
+      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
