@@ -5,6 +5,7 @@ import 'package:pida/models/lifelog.dart';
 import 'package:pida/providers/lifelog_provider.dart';
 import 'package:pida/services/audio_service.dart';
 import 'package:pida/widgets/error_widget.dart';
+import 'package:pida/widgets/filter_bar.dart';
 import 'package:pida/widgets/loading_widget.dart';
 import 'package:pida/widgets/speaker_avatar.dart';
 

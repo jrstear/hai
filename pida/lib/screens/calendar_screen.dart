@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:pida/models/lifelog.dart';
+import 'package:pida/providers/filter_provider.dart';
 import 'package:pida/providers/lifelog_provider.dart';
 import 'package:pida/routes/app_router.dart';
 import 'package:pida/widgets/error_widget.dart';
+import 'package:pida/widgets/filter_bar.dart';
 import 'package:pida/widgets/loading_widget.dart';
+import 'package:pida/widgets/people_filter_display.dart';
 import 'package:pida/widgets/speaker_avatar.dart';
+import 'package:pida/widgets/time_filter.dart';
 
 /// Calendar screen - Day View
 /// 
@@ -25,7 +28,6 @@ class CalendarScreen extends ConsumerStatefulWidget {
 }
 
 class _CalendarScreenState extends ConsumerState<CalendarScreen> {
-  DateTime _selectedDate = DateTime.now();
   final ScrollController _scrollController = ScrollController();
   bool _hasScrolledToBottom = false;
 
@@ -57,23 +59,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     }
   }
 
-  void _goToPreviousDay() {
-    setState(() {
-      _selectedDate = _selectedDate.subtract(const Duration(days: 1));
-      _hasScrolledToBottom = false;
-    });
-  }
-
-  void _goToNextDay() {
-    setState(() {
-      _selectedDate = _selectedDate.add(const Duration(days: 1));
-      _hasScrolledToBottom = false;
-    });
-  }
-
   void _onDateChanged(DateTime date) {
     setState(() {
-      _selectedDate = date;
       _hasScrolledToBottom = false;
     });
   }
@@ -100,7 +87,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final dateStr = _formatDate(_selectedDate);
+    final selectedDate = ref.watch(calendarDateFilterProvider) ?? DateTime.now();
+    final dateStr = _formatDate(selectedDate);
     final lifelogAsync = ref.watch(lifelogProvider(dateStr));
 
     return Scaffold(
@@ -109,8 +97,26 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       ),
       body: Column(
         children: [
-          // Date selector with swipe gestures
-          _buildDateSelector(context),
+          // Filter bar with time and people filters
+          FilterBar(
+            leftContent: TimeFilter(
+              onDateChanged: _onDateChanged,
+            ),
+            rightContent: const PeopleFilterDisplay(),
+            onHorizontalDragEnd: (details) {
+              if (details.primaryVelocity! > 0) {
+                goToPreviousCalendarDay(ref);
+                setState(() {
+                  _hasScrolledToBottom = false;
+                });
+              } else if (details.primaryVelocity! < 0) {
+                goToNextCalendarDay(ref);
+                setState(() {
+                  _hasScrolledToBottom = false;
+                });
+              }
+            },
+          ),
 
           // Conversations list
           Expanded(
@@ -145,77 +151,21 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Widget _buildDateSelector(BuildContext context) {
-    return GestureDetector(
-      onHorizontalDragEnd: (details) {
-        if (details.primaryVelocity! > 0) {
-          _goToPreviousDay();
-        } else if (details.primaryVelocity! < 0) {
-          _goToNextDay();
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          border: Border(
-            bottom: BorderSide(
-              color: Theme.of(context).dividerColor,
-              width: 1,
-            ),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back_ios),
-              onPressed: _goToPreviousDay,
-            ),
-            Expanded(
-              child: InkWell(
-                onTap: () async {
-                  final DateTime? picked = await showDatePicker(
-                    context: context,
-                    initialDate: _selectedDate,
-                    firstDate: DateTime(2000),
-                    lastDate: DateTime(2100),
-                  );
-                  if (picked != null && picked != _selectedDate) {
-                    _onDateChanged(picked);
-                  }
-                },
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      DateFormat('EEEE, MMMM d').format(_selectedDate),
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.calendar_today, size: 18),
-                  ],
-                ),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.arrow_forward_ios),
-              onPressed: _goToNextDay,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildConversationsList(
       BuildContext context, List<ConversationSummary> summaries) {
     return GestureDetector(
       onHorizontalDragEnd: (details) {
         if (details.primaryVelocity! > 0) {
-          _goToPreviousDay();
+          goToPreviousCalendarDay(ref);
+          setState(() {
+            _hasScrolledToBottom = false;
+          });
         } else if (details.primaryVelocity! < 0) {
-          _goToNextDay();
+          goToNextCalendarDay(ref);
+          setState(() {
+            _hasScrolledToBottom = false;
+          });
         }
       },
       child: ListView.builder(
@@ -235,8 +185,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     return InkWell(
       onTap: () {
         // Navigate to Conversation screen with lifelog_id and date
+        final selectedDate = ref.read(calendarDateFilterProvider) ?? DateTime.now();
         context.push(
-            '${AppRoutes.conversation}?lifelog_id=${summary.lifelogId}&date=${_formatDate(_selectedDate)}');
+            '${AppRoutes.conversation}?lifelog_id=${summary.lifelogId}&date=${_formatDate(selectedDate)}');
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
