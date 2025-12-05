@@ -317,17 +317,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     if (blockquote.speakerId == null || blockquote.speakerId!.isEmpty) {
       // Blockquote hasn't been matched to a segment yet - can't associate via API
       // But we've already tracked it locally for UI display
-      // Show a message to the user
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Contact added to conversation. Full association will be available after audio processing completes.',
-            ),
-            duration: Duration(seconds: 4),
-          ),
-        );
-      }
+      // No message needed - the UI already shows success (icon updated, person added)
       return;
     }
 
