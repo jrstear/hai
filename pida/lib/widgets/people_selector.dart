@@ -305,7 +305,11 @@ class _PeopleSelectorState extends ConsumerState<PeopleSelector>
     Contact contact,
     bool isInTopSection,
   ) {
-    final isSelected = widget.selectedContactIds?.contains(contact.id) ?? false;
+    // Watch the actual filter state if we're in filter context
+    // This ensures checkbox updates immediately when filter changes
+    final isSelected = widget.context == 'filter'
+        ? ref.watch(calendarPeopleFilterProvider).contains(contact.id)
+        : (widget.selectedContactIds?.contains(contact.id) ?? false);
 
     return InkWell(
       onTap: () => _handleContactRowTap(contact.id, isSelected),
@@ -373,33 +377,46 @@ Future<void> showPeopleSelector({
   }
 
   overlayEntry = OverlayEntry(
-    builder: (context) => Stack(
-      children: [
-        // Semi-transparent backdrop
-        Positioned.fill(
-          child: GestureDetector(
-            onTap: close,
-            child: Container(
-              color: Colors.black.withOpacity(0.3),
+    builder: (context) {
+      // Calculate top offset to position drawer below filter bar
+      // AppBar height + FilterBar height (approximately 56px + 56px = 112px)
+      final mediaQuery = MediaQuery.of(context);
+      final appBarHeight = kToolbarHeight; // Standard AppBar height
+      final filterBarHeight = 56.0; // Approximate FilterBar height (padding + content)
+      final topOffset = appBarHeight + filterBarHeight;
+      
+      return Stack(
+        children: [
+          // Semi-transparent backdrop (only below filter bar)
+          Positioned(
+            left: 0,
+            right: 0,
+            top: topOffset,
+            bottom: 0,
+            child: GestureDetector(
+              onTap: close,
+              child: Container(
+                color: Colors.black.withOpacity(0.3),
+              ),
             ),
           ),
-        ),
 
-        // People selector drawer (right side)
-        Positioned(
-          right: 0,
-          top: 0,
-          bottom: 0,
-          child: PeopleSelector(
-            selectedContactIds: selectedContactIds,
-            participantContactIds: participantContactIds,
-            context: contextType,
-            onContactSelected: onContactSelected,
-            onClose: close,
+          // People selector drawer (right side, below filter bar)
+          Positioned(
+            right: 0,
+            top: topOffset,
+            bottom: 0,
+            child: PeopleSelector(
+              selectedContactIds: selectedContactIds,
+              participantContactIds: participantContactIds,
+              context: contextType,
+              onContactSelected: onContactSelected,
+              onClose: close,
+            ),
           ),
-        ),
-      ],
-    ),
+        ],
+      );
+    },
   );
 
   overlayState.insert(overlayEntry);

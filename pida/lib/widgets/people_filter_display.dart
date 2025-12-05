@@ -47,24 +47,80 @@ class PeopleFilterDisplay extends ConsumerWidget {
         });
 
         // Build avatar row (right-aligned, expanding leftward)
-        return Row(
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              // Clear filter button (X) - only shown when there are selected people
+              if (selectedContacts.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () {
+                    ref.read(calendarPeopleFilterProvider.notifier).state = [];
+                  },
+                  tooltip: 'Clear filter',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              
+              // Avatars (right to left, so reverse the list)
+              ...selectedContacts.reversed.map((contact) {
+                return Container(
+                  margin: const EdgeInsets.only(right: 4),
+                  child: ContactAvatar(
+                    name: contact.name,
+                    pictureUrl: contact.pictureUrl,
+                    favoriteColor: contact.favoriteColor,
+                    size: 32,
+                  ),
+                );
+              }),
+              
+              // Add button (always at far right)
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: onAddTap,
+                tooltip: 'Add people to filter',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+        );
+      },
+      loading: () => Align(
+        alignment: Alignment.centerRight,
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            // Avatars (right to left, so reverse the list)
-            ...selectedContacts.reversed.map((contact) {
-              return Container(
-                margin: const EdgeInsets.only(right: 4),
-                child: ContactAvatar(
-                  name: contact.name,
-                  pictureUrl: contact.pictureUrl,
-                  favoriteColor: contact.favoriteColor,
-                  size: 32,
+            if (selectedPeopleIds.isNotEmpty) ...[
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () {
+                  ref.read(calendarPeopleFilterProvider.notifier).state = [];
+                },
+                tooltip: 'Clear filter',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              );
-            }),
-            
-            // Add button (always at far right)
+                child: Text(
+                  '${selectedPeopleIds.length}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ),
+            ],
             IconButton(
               icon: const Icon(Icons.add_circle_outline),
               onPressed: onAddTap,
@@ -73,63 +129,48 @@ class PeopleFilterDisplay extends ConsumerWidget {
               constraints: const BoxConstraints(),
             ),
           ],
-        );
-      },
-      loading: () => Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          if (selectedPeopleIds.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '${selectedPeopleIds.length}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-            ),
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline),
-            onPressed: onAddTap,
-            tooltip: 'Add people to filter',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-        ],
+        ),
       ),
-      error: (error, stack) => Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          if (selectedPeopleIds.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.errorContainer,
-                borderRadius: BorderRadius.circular(12),
+      error: (error, stack) => Align(
+        alignment: Alignment.centerRight,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            if (selectedPeopleIds.isNotEmpty) ...[
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () {
+                  ref.read(calendarPeopleFilterProvider.notifier).state = [];
+                },
+                tooltip: 'Clear filter',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
               ),
-              child: Text(
-                '${selectedPeopleIds.length}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onErrorContainer,
-                      fontWeight: FontWeight.bold,
-                    ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${selectedPeopleIds.length}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
               ),
+            ],
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline),
+              onPressed: onAddTap,
+              tooltip: 'Add people to filter',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
             ),
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline),
-            onPressed: onAddTap,
-            tooltip: 'Add people to filter',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -51,7 +51,10 @@ class FilterBar extends StatelessWidget {
         // Right content (people filter)
         if (rightContent != null)
           Flexible(
-            child: rightContent!,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: rightContent!,
+            ),
             flex: 1,
           ),
       ],
