@@ -34,7 +34,8 @@ func main() {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"}, // Configure properly for production
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-API-Key", "X-Device-ID"},
+		ExposedHeaders:   []string{"Content-Length", "Content-Type"}, // Expose these headers for clients
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
@@ -80,4 +81,3 @@ func main() {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
-

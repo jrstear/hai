@@ -96,3 +96,5 @@ CREATE INDEX IF NOT EXISTS idx_speakers_last_seen ON speakers(last_seen);
 
 
 
+
+

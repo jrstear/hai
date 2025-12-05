@@ -1,0 +1,201 @@
+version: '3'
+
+vars:
+  PIDA_API_URL: ${PIDA_API_URL:-http://localhost:8080}
+  LIMITLESS_API_KEY: ${LIMITLESS_API_KEY:-}
+  RECORDING_DEVICE_ID: ${RECORDING_DEVICE_ID:-}
+  DEVICE: ${DEVICE:-chrome}
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  run:
+    desc: Run Flutter web app in Chrome
+    cmds:
+      - |
+        if [ -f ../.env ]; then
+          echo "Loading environment variables from ../.env"
+          set -a
+          source ../.env
+          set +a
+        fi
+        echo "Starting Flutter web app..."
+        echo "API Base URL: ${PIDA_API_URL:-{{.PIDA_API_URL}}}"
+        echo "Device: {{.DEVICE}}"
+        flutter run -d {{.DEVICE}} \
+          --dart-define=PIDA_API_URL="${PIDA_API_URL:-{{.PIDA_API_URL}}}" \
+          --dart-define=LIMITLESS_API_KEY="${LIMITLESS_API_KEY:-{{.LIMITLESS_API_KEY}}}" \
+          --dart-define=RECORDING_DEVICE_ID="${RECORDING_DEVICE_ID:-{{.RECORDING_DEVICE_ID}}}"
+    env:
+      LIMITLESS_API_KEY: "{{.LIMITLESS_API_KEY}}"
+      RECORDING_DEVICE_ID: "{{.RECORDING_DEVICE_ID}}"
+
+  run-android:
+    desc: Run Flutter app on Android device/emulator
+    cmds:
+      - |
+        if [ -f ../.env ]; then
+          echo "Loading environment variables from ../.env"
+          set -a
+          source ../.env
+          set +a
+        fi
+        echo "Starting Flutter Android app..."
+        flutter run -d android \
+          --dart-define=PIDA_API_URL="${PIDA_API_URL:-{{.PIDA_API_URL}}}" \
+          --dart-define=LIMITLESS_API_KEY="${LIMITLESS_API_KEY:-{{.LIMITLESS_API_KEY}}}" \
+          --dart-define=RECORDING_DEVICE_ID="${RECORDING_DEVICE_ID:-{{.RECORDING_DEVICE_ID}}}"
+    env:
+      LIMITLESS_API_KEY: "{{.LIMITLESS_API_KEY}}"
+      RECORDING_DEVICE_ID: "{{.RECORDING_DEVICE_ID}}"
+
+  run-ios:
+    desc: Run Flutter app on iOS device/simulator
+    cmds:
+      - |
+        if [ -f ../.env ]; then
+          echo "Loading environment variables from ../.env"
+          set -a
+          source ../.env
+          set +a
+        fi
+        echo "Starting Flutter iOS app..."
+        flutter run -d ios \
+          --dart-define=PIDA_API_URL="${PIDA_API_URL:-{{.PIDA_API_URL}}}" \
+          --dart-define=LIMITLESS_API_KEY="${LIMITLESS_API_KEY:-{{.LIMITLESS_API_KEY}}}" \
+          --dart-define=RECORDING_DEVICE_ID="${RECORDING_DEVICE_ID:-{{.RECORDING_DEVICE_ID}}}"
+    env:
+      LIMITLESS_API_KEY: "{{.LIMITLESS_API_KEY}}"
+      RECORDING_DEVICE_ID: "{{.RECORDING_DEVICE_ID}}"
+
+  build:
+    desc: Build Flutter web app for production
+    cmds:
+      - |
+        if [ -f ../.env ]; then
+          echo "Loading environment variables from ../.env"
+          set -a
+          source ../.env
+          set +a
+        fi
+        echo "Building Flutter web app..."
+        flutter build web \
+          --dart-define=PIDA_API_URL="${PIDA_API_URL:-{{.PIDA_API_URL}}}" \
+          --dart-define=LIMITLESS_API_KEY="${LIMITLESS_API_KEY:-{{.LIMITLESS_API_KEY}}}" \
+          --dart-define=RECORDING_DEVICE_ID="${RECORDING_DEVICE_ID:-{{.RECORDING_DEVICE_ID}}}"
+        echo "Build output: build/web/"
+
+  build-android:
+    desc: Build Flutter Android APK
+    cmds:
+      - |
+        if [ -f ../.env ]; then
+          echo "Loading environment variables from ../.env"
+          set -a
+          source ../.env
+          set +a
+        fi
+        echo "Building Flutter Android APK..."
+        flutter build apk \
+          --dart-define=PIDA_API_URL="${PIDA_API_URL:-{{.PIDA_API_URL}}}" \
+          --dart-define=LIMITLESS_API_KEY="${LIMITLESS_API_KEY:-{{.LIMITLESS_API_KEY}}}" \
+          --dart-define=RECORDING_DEVICE_ID="${RECORDING_DEVICE_ID:-{{.RECORDING_DEVICE_ID}}}"
+        echo "Build output: build/app/outputs/flutter-apk/"
+
+  build-ios:
+    desc: Build Flutter iOS app
+    cmds:
+      - |
+        if [ -f ../.env ]; then
+          echo "Loading environment variables from ../.env"
+          set -a
+          source ../.env
+          set +a
+        fi
+        echo "Building Flutter iOS app..."
+        flutter build ios \
+          --dart-define=PIDA_API_URL="${PIDA_API_URL:-{{.PIDA_API_URL}}}" \
+          --dart-define=LIMITLESS_API_KEY="${LIMITLESS_API_KEY:-{{.LIMITLESS_API_KEY}}}" \
+          --dart-define=RECORDING_DEVICE_ID="${RECORDING_DEVICE_ID:-{{.RECORDING_DEVICE_ID}}}"
+        echo "Build output: build/ios/"
+
+  test:
+    desc: Run Flutter tests
+    cmds:
+      - flutter test
+
+  analyze:
+    desc: Analyze Flutter code (linting)
+    cmds:
+      - flutter analyze
+
+  format:
+    desc: Format Dart code
+    cmds:
+      - dart format .
+
+  format-check:
+    desc: Check if Dart code is formatted
+    cmds:
+      - dart format --set-exit-if-changed .
+
+  clean:
+    desc: Clean Flutter build artifacts
+    cmds:
+      - flutter clean
+
+  pub-get:
+    desc: Get Flutter dependencies
+    cmds:
+      - flutter pub get
+
+  pub-upgrade:
+    desc: Upgrade Flutter dependencies
+    cmds:
+      - flutter pub upgrade
+
+  pub-outdated:
+    desc: Show outdated Flutter dependencies
+    cmds:
+      - flutter pub outdated
+
+  generate:
+    desc: Generate code (build_runner for freezed/json_serializable)
+    cmds:
+      - flutter pub run build_runner build --delete-conflicting-outputs
+
+  generate-watch:
+    desc: Watch for changes and regenerate code
+    cmds:
+      - flutter pub run build_runner watch --delete-conflicting-outputs
+
+  doctor:
+    desc: Run Flutter doctor to check setup
+    cmds:
+      - flutter doctor
+
+  devices:
+    desc: List available Flutter devices
+    cmds:
+      - flutter devices
+
+  check:
+    desc: Run all checks (format-check, analyze, test)
+    cmds:
+      - task: format-check
+      - task: analyze
+      - task: test
+
+  setup:
+    desc: Initial setup (get dependencies, generate code)
+    cmds:
+      - task: pub-get
+      - task: generate
+
+  deps:
+    desc: Alias for pub-get
+    cmds:
+      - task: pub-get
