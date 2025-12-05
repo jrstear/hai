@@ -8,6 +8,7 @@ import 'package:pida/providers/filter_provider.dart';
 import 'package:pida/providers/lifelog_provider.dart';
 import 'package:pida/services/audio_service.dart';
 import 'package:pida/services/api_client.dart';
+import 'package:pida/widgets/contact_avatar.dart';
 import 'package:pida/widgets/conversation_participants_display.dart';
 import 'package:pida/widgets/error_widget.dart';
 import 'package:pida/widgets/filter_bar.dart';
@@ -294,8 +295,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           // Add to conversation participants if not already there
           addPersonToConversationParticipants(ref, lifelogId, contactId);
           
+          // Track association locally immediately (for UI update)
+          associateBlockquoteWithContact(ref, blockquote.id, contactId);
+          
           // Associate blockquote's speaker with contact via API
-          await _associateBlockquoteSpeaker(ref, context, blockquote, contactId);
+          await _associateBlockquoteSpeaker(ref, context, blockquote, contactId, lifelogId);
         }
       },
     );
@@ -307,17 +311,18 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     BuildContext context,
     Blockquote blockquote,
     String contactId,
+    String lifelogId,
   ) async {
     // Check if blockquote has a speaker_id (it may not be matched to a segment yet)
     if (blockquote.speakerId == null || blockquote.speakerId!.isEmpty) {
-      // Blockquote hasn't been matched to a segment yet - can't associate
+      // Blockquote hasn't been matched to a segment yet - can't associate via API
+      // But we've already tracked it locally for UI display
       // Show a message to the user
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'This blockquote hasn\'t been matched to a speaker yet. '
-              'Association will be available after audio processing completes.',
+              'Contact added to conversation. Full association will be available after audio processing completes.',
             ),
             duration: Duration(seconds: 4),
           ),
@@ -330,6 +335,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     try {
       final apiClient = ref.read(apiClientProvider);
       await apiClient.associateSpeaker(contactId, blockquote.speakerId!);
+      
+      // Refresh lifelog data to get updated blockquotes
+      final dateStr = widget.date ?? DateFormat('yyyy-MM-dd').format(DateTime.now());
+      ref.invalidate(lifelogProvider(dateStr));
       
       // Show success message
       if (context.mounted) {
@@ -356,6 +365,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   Widget _buildBlockquote(
       BuildContext context, Blockquote blockquote, WidgetRef ref, String lifelogId) {
     final isUnknown = _isUnknownSpeaker(blockquote.speakerName);
+    final associatedContactId = getBlockquoteContactId(ref, blockquote.id);
     
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -364,31 +374,55 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         children: [
           Row(
             children: [
-              // Make speaker avatar clickable if unknown
-              isUnknown
-                  ? InkWell(
-                      onTap: () => _handleUnknownSpeakerClick(
-                        context,
-                        ref,
-                        blockquote,
-                        lifelogId,
-                      ),
-                      borderRadius: BorderRadius.circular(12), // Half of size for circle
-                      child: SpeakerAvatar(
-                        speakerName: blockquote.speakerName,
-                        size: 24,
-                      ),
-                    )
-                  : SpeakerAvatar(
-                      speakerName: blockquote.speakerName,
-                      size: 24,
-                    ),
+              // Show contact avatar if associated, otherwise show speaker avatar
+              _buildBlockquoteAvatar(
+                context,
+                ref,
+                blockquote,
+                lifelogId,
+                isUnknown,
+                associatedContactId,
+              ),
               const SizedBox(width: 8),
-              Text(
-                blockquote.speakerName,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+              // Show contact name if associated, otherwise show speaker name
+              Builder(
+                builder: (context) {
+                  if (associatedContactId != null) {
+                    final contactsAsync = ref.watch(contactsProvider);
+                    return contactsAsync.when(
+                      data: (contactListResponse) {
+                        final contact = contactListResponse.contacts.firstWhere(
+                          (c) => c.id == associatedContactId,
+                          orElse: () => Contact(id: associatedContactId, name: 'Unknown'),
+                        );
+                        return Text(
+                          contact.name,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                        );
+                      },
+                      loading: () => Text(
+                        blockquote.speakerName,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      error: (error, stack) => Text(
+                        blockquote.speakerName,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    );
+                  }
+                  return Text(
+                    blockquote.speakerName,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  );
+                },
               ),
               const SizedBox(width: 8),
               Text(
@@ -423,6 +457,68 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       ),
     );
   }
+
+  /// Build the avatar for a blockquote (contact avatar if associated, speaker avatar otherwise)
+  Widget _buildBlockquoteAvatar(
+    BuildContext context,
+    WidgetRef ref,
+    Blockquote blockquote,
+    String lifelogId,
+    bool isUnknown,
+    String? associatedContactId,
+  ) {
+    // If blockquote is associated with a contact, show contact avatar
+    if (associatedContactId != null) {
+      final contactsAsync = ref.watch(contactsProvider);
+      return contactsAsync.when(
+        data: (contactListResponse) {
+          final contact = contactListResponse.contacts.firstWhere(
+            (c) => c.id == associatedContactId,
+            orElse: () => Contact(id: associatedContactId, name: 'Unknown'),
+          );
+          return ContactAvatar(
+            name: contact.name,
+            pictureUrl: contact.pictureUrl,
+            favoriteColor: contact.favoriteColor,
+            size: 24,
+          );
+        },
+        loading: () => const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        error: (error, stack) => SpeakerAvatar(
+          speakerName: blockquote.speakerName,
+          size: 24,
+        ),
+      );
+    }
+
+    // If unknown and not associated, make clickable
+    if (isUnknown) {
+      return InkWell(
+        onTap: () => _handleUnknownSpeakerClick(
+          context,
+          ref,
+          blockquote,
+          lifelogId,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        child: SpeakerAvatar(
+          speakerName: blockquote.speakerName,
+          size: 24,
+        ),
+      );
+    }
+
+    // Known speaker, show speaker avatar
+    return SpeakerAvatar(
+      speakerName: blockquote.speakerName,
+      size: 24,
+    );
+  }
+
 
   /// Build conversation title widget for filter bar
   Widget _buildConversationTitle(BuildContext context, String title) {

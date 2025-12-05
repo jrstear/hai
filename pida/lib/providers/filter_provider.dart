@@ -120,3 +120,25 @@ void removePersonFromConversationParticipants(WidgetRef ref, String lifelogId, S
   }
 }
 
+/// Blockquote-to-contact association provider
+/// 
+/// Tracks which blockquotes are associated with which contacts.
+/// Key: blockquote_id, Value: contact_id
+/// Used to display contact avatars for blockquotes that have been associated.
+final blockquoteContactAssociationProvider = StateProvider<Map<String, String>>((ref) => {});
+
+/// Helper function to associate a blockquote with a contact
+void associateBlockquoteWithContact(WidgetRef ref, String blockquoteId, String contactId) {
+  final currentAssociations = ref.read(blockquoteContactAssociationProvider);
+  ref.read(blockquoteContactAssociationProvider.notifier).state = {
+    ...currentAssociations,
+    blockquoteId: contactId,
+  };
+}
+
+/// Helper function to get the contact ID associated with a blockquote
+String? getBlockquoteContactId(WidgetRef ref, String blockquoteId) {
+  final associations = ref.read(blockquoteContactAssociationProvider);
+  return associations[blockquoteId];
+}
+
