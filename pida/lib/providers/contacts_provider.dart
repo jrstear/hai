@@ -20,6 +20,8 @@ final contactsFilteredProvider = FutureProvider.family<ContactListResponse, Cont
 );
 
 /// Filter parameters for contacts
+/// 
+/// Implements equality so Riverpod can properly cache results based on filter values
 class ContactsFilter {
   final bool? known;
   final String? search;
@@ -28,6 +30,17 @@ class ContactsFilter {
     this.known,
     this.search,
   });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ContactsFilter &&
+          runtimeType == other.runtimeType &&
+          known == other.known &&
+          search == other.search;
+
+  @override
+  int get hashCode => Object.hash(known, search);
 }
 
 /// Single contact provider
