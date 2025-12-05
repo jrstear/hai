@@ -5,6 +5,10 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"hai/storage"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // BlockquoteResponse represents a blockquote with formatted fields for the UI
@@ -14,6 +18,7 @@ type BlockquoteResponse struct {
 	LifelogTitle string `json:"lifelog_title,omitempty"`
 	SpeakerName string  `json:"speaker_name"`
 	SpeakerID   *string `json:"speaker_id,omitempty"` // Optional: Global speaker ID (populated after matching)
+	ContactID   *string `json:"contact_id,omitempty"` // Optional: Associated contact ID (user-assigned)
 	Content     string  `json:"content"`
 	StartTime   string  `json:"start_time"`   // Formatted time (HH:MM:SS)
 	EndTime     string  `json:"end_time"`     // Formatted time (HH:MM:SS)
@@ -91,6 +96,7 @@ func (s *APIServer) HandleGetLifelogs(w http.ResponseWriter, r *http.Request) {
 			LifelogTitle:  lifelogTitles[bq.LifelogID],
 			SpeakerName:   bq.SpeakerName,
 			SpeakerID:     bq.SpeakerID, // Optional: Global speaker ID (if matched to segment)
+			ContactID:     bq.ContactID, // Optional: Associated contact ID (user-assigned)
 			Content:       bq.Content,
 			StartTime:     startTimeStr,
 			EndTime:       endTimeStr,
@@ -137,6 +143,77 @@ func (s *APIServer) HandleGetLifelogs(w http.ResponseWriter, r *http.Request) {
 		"grouped":             grouped,
 		"conversationTimings": conversationTimings,
 		"total":               len(responses),
+	})
+}
+
+// UpdateBlockquoteContactRequest represents a request to update blockquote's contact_id
+type UpdateBlockquoteContactRequest struct {
+	ContactID *string `json:"contact_id"` // Optional: contact ID to associate, or null to clear
+}
+
+// HandleUpdateBlockquoteContact handles PUT /api/blockquotes/{blockquoteId}/contact
+// Associates a blockquote with a contact by setting the blockquote's contact_id field
+func (s *APIServer) HandleUpdateBlockquoteContact(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		writeError(w, http.StatusMethodNotAllowed, &ErrMethodNotAllowed{Method: r.Method})
+		return
+	}
+
+	blockquoteID := chi.URLParam(r, "blockquoteId")
+	if blockquoteID == "" {
+		writeError(w, http.StatusBadRequest, &ErrBadRequest{Message: "blockquote ID is required"})
+		return
+	}
+
+	var req UpdateBlockquoteContactRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, &ErrBadRequest{Message: "invalid request body: " + err.Error()})
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get existing blockquote
+	blockquote, err := s.storage.GetLifelogBlockquote(ctx, blockquoteID)
+	if err != nil {
+		if err == storage.ErrNotFound {
+			writeError(w, http.StatusNotFound, &ErrBadRequest{Message: "blockquote not found: " + blockquoteID})
+			return
+		}
+		log.Printf("[ERROR] Failed to get blockquote: %v", err)
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Verify contact exists if contact_id is provided
+	if req.ContactID != nil && *req.ContactID != "" {
+		_, err := s.contacts.GetContact(ctx, *req.ContactID)
+		if err != nil {
+			if err.Error() == "contact not found: "+*req.ContactID {
+				writeError(w, http.StatusNotFound, &ErrBadRequest{Message: "contact not found: " + *req.ContactID})
+				return
+			}
+			log.Printf("[ERROR] Failed to get contact: %v", err)
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	// Update blockquote's contact_id
+	blockquote.ContactID = req.ContactID
+
+	// Update in storage
+	if err := s.storage.UpdateLifelogBlockquote(ctx, blockquote); err != nil {
+		log.Printf("[ERROR] Failed to update blockquote: %v", err)
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Return updated blockquote
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":         blockquote.ID,
+		"contact_id": blockquote.ContactID,
 	})
 }
 

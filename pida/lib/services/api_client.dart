@@ -199,6 +199,18 @@ class ApiClient {
       throw _handleError(e);
     }
   }
+
+  // Blockquotes endpoints
+  Future<void> updateBlockquoteContact(String blockquoteId, String? contactId) async {
+    try {
+      await _dio.put(
+        '/api/blockquotes/$blockquoteId/contact',
+        data: {'contact_id': contactId},
+      );
+    } on DioException catch (e) {
+      throw _handleError(e);
+    }
+  }
 }
 
 /// Provider for API client

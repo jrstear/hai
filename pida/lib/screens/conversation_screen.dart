@@ -298,53 +298,36 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           // Track association locally immediately (for UI update)
           associateBlockquoteWithContact(ref, blockquote.id, contactId);
           
-          // Associate blockquote's speaker with contact via API
-          await _associateBlockquoteSpeaker(ref, context, blockquote, contactId, lifelogId);
+          // Store association in Elasticsearch via API
+          await _associateBlockquoteWithContact(ref, context, blockquote, contactId, lifelogId);
         }
       },
     );
   }
 
-  /// Associate blockquote's speaker with a contact via API
-  Future<void> _associateBlockquoteSpeaker(
+  /// Associate blockquote with a contact via API (stores contact_id in Elasticsearch)
+  Future<void> _associateBlockquoteWithContact(
     WidgetRef ref,
     BuildContext context,
     Blockquote blockquote,
     String contactId,
     String lifelogId,
   ) async {
-    // Check if blockquote has a speaker_id (it may not be matched to a segment yet)
-    if (blockquote.speakerId == null || blockquote.speakerId!.isEmpty) {
-      // Blockquote hasn't been matched to a segment yet - can't associate via API
-      // But we've already tracked it locally for UI display
-      // No message needed - the UI already shows success (icon updated, person added)
-      return;
-    }
-
-    // Call API to associate speaker with contact
     try {
       final apiClient = ref.read(apiClientProvider);
-      await apiClient.associateSpeaker(contactId, blockquote.speakerId!);
+      await apiClient.updateBlockquoteContact(blockquote.id, contactId);
       
-      // Refresh lifelog data to get updated blockquotes
+      // Refresh lifelog data to get updated blockquotes with contact_id
       final dateStr = widget.date ?? DateFormat('yyyy-MM-dd').format(DateTime.now());
       ref.invalidate(lifelogProvider(dateStr));
       
-      // Show success message
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Speaker associated with contact successfully'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+      // No success message needed - UI already shows success (icon updated, person added)
     } catch (error) {
       // Show error message
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to associate speaker: ${error.toString()}'),
+            content: Text('Failed to associate blockquote: ${error.toString()}'),
             duration: const Duration(seconds: 4),
           ),
         );
@@ -355,7 +338,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   Widget _buildBlockquote(
       BuildContext context, Blockquote blockquote, WidgetRef ref, String lifelogId) {
     final isUnknown = _isUnknownSpeaker(blockquote.speakerName);
-    final associatedContactId = getBlockquoteContactId(ref, blockquote.id);
+    // Use contact_id from API first, fall back to local state if not yet persisted
+    final associatedContactId = blockquote.contactId ?? getBlockquoteContactId(ref, blockquote.id);
     
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),

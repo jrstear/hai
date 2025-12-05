@@ -268,6 +268,9 @@ func (s *ElasticsearchStorage) ensureIndices(ctx context.Context) error {
 						"speaker_id": map[string]interface{}{
 							"type": "keyword",
 						},
+						"contact_id": map[string]interface{}{
+							"type": "keyword",
+						},
 						"start_offset_ms": map[string]interface{}{
 							"type": "integer",
 						},
@@ -1487,6 +1490,9 @@ func (s *ElasticsearchStorage) UpdateLifelogBlockquote(ctx context.Context, bloc
 	if blockquote.SpeakerID != nil {
 		existing.SpeakerID = blockquote.SpeakerID
 	}
+	if blockquote.ContactID != nil {
+		existing.ContactID = blockquote.ContactID
+	}
 	if blockquote.StartOffsetMs != 0 {
 		existing.StartOffsetMs = blockquote.StartOffsetMs
 	}
@@ -1891,6 +1897,9 @@ func (s *ElasticsearchStorage) lifelogBlockquoteToDoc(blockquote *LifelogBlockqu
 	if blockquote.SpeakerID != nil {
 		doc["speaker_id"] = *blockquote.SpeakerID
 	}
+	if blockquote.ContactID != nil {
+		doc["contact_id"] = *blockquote.ContactID
+	}
 
 	return doc
 }
@@ -1973,6 +1982,9 @@ func (s *ElasticsearchStorage) docToLifelogBlockquote(doc map[string]interface{}
 	}
 	if speakerID, ok := doc["speaker_id"].(string); ok {
 		blockquote.SpeakerID = &speakerID
+	}
+	if contactID, ok := doc["contact_id"].(string); ok && contactID != "" {
+		blockquote.ContactID = &contactID
 	}
 
 	return blockquote, nil

@@ -13,6 +13,8 @@ class Blockquote {
   final String speakerName;
   @JsonKey(name: 'speaker_id')
   final String? speakerId; // Optional: Global speaker ID (populated after matching)
+  @JsonKey(name: 'contact_id')
+  final String? contactId; // Optional: Associated contact ID (user-assigned)
   final String content;
   @JsonKey(name: 'start_time')
   final String startTime; // Formatted time (HH:MM:SS)
@@ -30,6 +32,7 @@ class Blockquote {
     this.lifelogTitle,
     required this.speakerName,
     this.speakerId,
+    this.contactId,
     required this.content,
     required this.startTime,
     required this.endTime,

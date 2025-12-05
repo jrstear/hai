@@ -70,8 +70,9 @@ type LifelogBlockquote struct {
 	LifelogID     string    `json:"lifelog_id"`      // References Lifelog.ID
 	RecordingID   *string   `json:"recording_id"`    // Optional: Which recording this overlaps with
 	Content       string    `json:"content"`         // Transcript text
-	SpeakerName   string    `json:"speaker_name"`    // "You", "Unknown", "Jon Stearley", etc.
-	SpeakerID     *string   `json:"speaker_id"`      // Optional: Mapped to our global speaker ID
+	SpeakerName   string    `json:"speaker_name"`    // "You", "Unknown", "Jon Stearley", etc. (from Limitless)
+	SpeakerID     *string   `json:"speaker_id"`      // Optional: Mapped to our global speaker ID (from diarization)
+	ContactID     *string   `json:"contact_id"`      // Optional: Associated contact ID (user-assigned, from contacts index)
 	StartOffsetMs int       `json:"start_offset_ms"` // Milliseconds from lifelog start
 	EndOffsetMs   int       `json:"end_offset_ms"`   // Milliseconds from lifelog end
 	StartTime     time.Time `json:"start_time"`      // Absolute start time (UTC)

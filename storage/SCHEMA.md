@@ -105,6 +105,7 @@ Equivalent to Limitless API's "blockquote" content type.
 - `content` (string): Transcript text (what was said)
 - `speaker_name` (string): Speaker name from Limitless ("You", "Unknown", "Jon Stearley", etc.)
 - `speaker_id` (string, optional): Mapped to our global speaker ID (populated by matching tool)
+- `contact_id` (string, optional): Associated contact ID from contacts index (user-assigned)
 - `start_offset_ms` (int): Milliseconds from lifelog start
 - `end_offset_ms` (int): Milliseconds from lifelog end
 - `start_time` (time.Time): Absolute start time (UTC)
@@ -124,6 +125,12 @@ Equivalent to Limitless API's "blockquote" content type.
 - `recording_id` and `speaker_id` are populated by the matching tool (`onboard/cmd/match-blockquotes-to-segments`)
 - Matching is done via time-based overlap calculation between blockquote time ranges and segment time ranges
 - Once matched, segments store `blockquote_id` for fast transcript lookup
+
+**Redundancy Note:**
+- `speaker_name`: Comes from Limitless API (external source, cannot be modified)
+- `contact_id`: User-assigned from contacts index (short-term solution for associating blockquotes with contacts)
+- `speaker_id`: From our custom diarization system (long-term goal, populated after matching)
+- These three fields are conceptually redundant - they all identify "who is speaking" but from different sources. The app currently uses `contact_id` for UI/UX (people filter, selector, etc.), while `speaker_id` is the long-term goal for connecting with diarization.
 
 ## SQLite Schema
 
@@ -181,7 +188,7 @@ lifelogs/
 
 lifelog_blockquotes/
   - id (keyword)
-  - lifelog_id, recording_id, speaker_id (keyword)
+  - lifelog_id, recording_id, speaker_id, contact_id (keyword)
   - content (text)
   - speaker_name (keyword)
   - start_offset_ms, end_offset_ms (integer)

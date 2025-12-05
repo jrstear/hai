@@ -71,6 +71,11 @@ func main() {
 			r.Get("/", srv.HandleGetLifelogs)
 		})
 
+		// Blockquotes endpoints
+		r.Route("/blockquotes", func(r chi.Router) {
+			r.Put("/{blockquoteId}/contact", srv.HandleUpdateBlockquoteContact)
+		})
+
 		// Limitless API proxy endpoint
 		r.Route("/limitless", func(r chi.Router) {
 			r.Get("/audio", srv.HandleLimitlessAudioProxy)

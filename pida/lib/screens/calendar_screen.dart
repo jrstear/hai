@@ -306,11 +306,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   Widget _buildConversationRow(
       BuildContext context, ConversationSummary summary) {
     return InkWell(
-      onTap: () {
+      onTap: () async {
         // Navigate to Conversation screen with lifelog_id and date
         final selectedDate = ref.read(calendarDateFilterProvider) ?? DateTime.now();
-        context.push(
+        await context.push(
             '${AppRoutes.conversation}?lifelog_id=${summary.lifelogId}&date=${_formatDate(selectedDate)}');
+        // After returning from conversation, refresh the day's data to get updated blockquotes
+        // This ensures contact associations made in conversation are reflected in calendar view
+        if (mounted) {
+          final dateStr = _formatDate(selectedDate);
+          ref.invalidate(lifelogProvider(dateStr));
+        }
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
