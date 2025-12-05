@@ -95,58 +95,79 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       appBar: AppBar(
         title: const Text('Calendar'),
       ),
-      body: Column(
-        children: [
-          // Filter bar with time and people filters
-          FilterBar(
-            leftContent: TimeFilter(
-              onDateChanged: _onDateChanged,
+      body: GestureDetector(
+        // Per-page swipe handling: Capture horizontal swipes to change date
+        // This prevents browser back/forward navigation from intercepting swipes
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: (_) {
+          // Start tracking to participate in gesture arena
+        },
+        onHorizontalDragUpdate: (details) {
+          // Track horizontal drag to ensure we win the gesture arena
+          // This prevents browser navigation from handling the swipe
+        },
+        onHorizontalDragEnd: (details) {
+          // Only handle if there's significant velocity (actual swipe, not just a tap)
+          if (details.primaryVelocity != null && details.primaryVelocity!.abs() > 200) {
+            // User expectation:
+            // Swipe left to right -> previous date (same as < button)
+            // Swipe right to left -> next date (same as > button)
+            if (details.primaryVelocity! > 0) {
+              // Left to right swipe -> previous date
+              goToPreviousCalendarDay(ref);
+              setState(() {
+                _hasScrolledToBottom = false;
+              });
+            } else if (details.primaryVelocity! < 0) {
+              // Right to left swipe -> next date
+              goToNextCalendarDay(ref);
+              setState(() {
+                _hasScrolledToBottom = false;
+              });
+            }
+          }
+        },
+        child: Column(
+          children: [
+            // Filter bar with time and people filters
+            FilterBar(
+              leftContent: TimeFilter(
+                onDateChanged: _onDateChanged,
+              ),
+              rightContent: const PeopleFilterDisplay(),
             ),
-            rightContent: const PeopleFilterDisplay(),
-            onHorizontalDragEnd: (details) {
-              if (details.primaryVelocity! > 0) {
-                goToPreviousCalendarDay(ref);
-                setState(() {
-                  _hasScrolledToBottom = false;
-                });
-              } else if (details.primaryVelocity! < 0) {
-                goToNextCalendarDay(ref);
-                setState(() {
-                  _hasScrolledToBottom = false;
-                });
-              }
-            },
-          ),
 
-          // Conversations list
-          Expanded(
-            child: lifelogAsync.when(
-              data: (response) {
-                final summaries = extractConversationSummaries(response);
+            // Conversations list
+            Expanded(
+              child: lifelogAsync.when(
+                data: (response) {
+                  final summaries = extractConversationSummaries(response);
 
-                if (summaries.isEmpty) {
-                  return const EmptyStateWidget(
-                    message: 'No conversations found for this date',
-                    icon: Icons.chat_bubble_outline,
-                  );
-                }
+                  if (summaries.isEmpty) {
+                    return const EmptyStateWidget(
+                      message: 'No conversations found for this date',
+                      icon: Icons.chat_bubble_outline,
+                    );
+                  }
 
-                // Scroll to bottom after data loads (snap to latest conversation)
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _scrollToBottom();
-                });
+                  // Scroll to bottom after data loads (snap to latest conversation)
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _scrollToBottom();
+                  });
 
-                return _buildConversationsList(context, summaries);
-              },
-              loading: () =>
-                  const LoadingWidget(message: 'Loading conversations...'),
-              error: (error, stack) => ErrorDisplayWidget(
-                message: 'Failed to load conversations: ${error.toString()}',
-                onRetry: () => ref.invalidate(lifelogProvider(dateStr)),
+                  return _buildConversationsList(context, summaries);
+                },
+                loading: () =>
+                    const LoadingWidget(message: 'Loading conversations...'),
+                error: (error, stack) => ErrorDisplayWidget(
+                  message: 'Failed to load conversations: ${error.toString()}',
+                  onRetry: () => ref.invalidate(lifelogProvider(dateStr)),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
+        ),
       ),
     );
   }
@@ -154,29 +175,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   Widget _buildConversationsList(
       BuildContext context, List<ConversationSummary> summaries) {
-    return GestureDetector(
-      onHorizontalDragEnd: (details) {
-        if (details.primaryVelocity! > 0) {
-          goToPreviousCalendarDay(ref);
-          setState(() {
-            _hasScrolledToBottom = false;
-          });
-        } else if (details.primaryVelocity! < 0) {
-          goToNextCalendarDay(ref);
-          setState(() {
-            _hasScrolledToBottom = false;
-          });
-        }
+    return ListView.builder(
+      controller: _scrollController,
+      reverse: false, // Chronological order (earliest first)
+      itemCount: summaries.length,
+      itemBuilder: (context, index) {
+        final summary = summaries[index];
+        return _buildConversationRow(context, summary);
       },
-      child: ListView.builder(
-        controller: _scrollController,
-        reverse: false, // Chronological order (earliest first)
-        itemCount: summaries.length,
-        itemBuilder: (context, index) {
-          final summary = summaries[index];
-          return _buildConversationRow(context, summary);
-        },
-      ),
     );
   }
 

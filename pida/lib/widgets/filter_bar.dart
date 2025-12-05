@@ -60,6 +60,7 @@ class FilterBar extends StatelessWidget {
     // Wrap with GestureDetector if swipe gestures are needed
     if (onHorizontalDragEnd != null) {
       content = GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onHorizontalDragEnd: onHorizontalDragEnd,
         child: content,
       );

@@ -29,10 +29,8 @@ class ApiClient {
     _dio.options.headers['Content-Type'] = 'application/json';
     _dio.options.headers['Accept'] = 'application/json';
     
-    // For Flutter web, add specific CORS handling
-    if (kIsWeb) {
-      _dio.options.extra['withCredentials'] = true;
-    }
+    // For Flutter web, CORS is handled by the API server
+    // No need to set withCredentials unless server requires it
 
     // Set API key if provided (for Limitless API audio streaming)
     if (apiKey != null && apiKey!.isNotEmpty) {

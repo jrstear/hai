@@ -64,7 +64,7 @@ ApiException handleDioError(DioException error) {
 
     case DioExceptionType.connectionError:
       return ApiException(
-        message: 'Connection error. Please check your internet connection.',
+        message: 'Connection error. Please ensure the API server is running at http://localhost:8080 and check your browser console for details.',
         statusCode: null,
         originalError: error,
       );
