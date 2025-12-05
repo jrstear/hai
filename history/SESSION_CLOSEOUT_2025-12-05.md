@@ -86,6 +86,11 @@ Added `contact_id` field to blockquote schema for persistence, implemented API e
   - Currently shows "jiggly row movement" but scrolling doesn't work properly
   - Likely relates to scroll controller state or scroll position restoration after data refresh
 
+- **hai-ylmi**: "Reduce Flutter log output when navigating back from conversation to calendar" (Priority 3, Task)
+  - Excessive log output makes debugging difficult
+  - Reduce verbosity of logging during navigation and data refresh
+  - Consider reducing debug logs, consolidating messages, or filtering routine operations
+
 ### Open (High Priority)
 - **hai-zod3**: "Associate unknown speaker from conversation view via people selector" - Functionally complete, needs testing
 - **hai-l1mm**: "Highlight blockquote person name when it matches Limitless speaker_name" (Priority 3, Enhancement)
@@ -204,11 +209,16 @@ Added `contact_id` field to blockquote schema for persistence, implemented API e
    - Currently refreshes entire day's data (works but not optimal)
    - Could be optimized with participants-only endpoint (future enhancement)
 
+3. **Excessive Logging** (hai-ylmi):
+   - Too much Flutter log output when navigating back from conversation
+   - Makes debugging difficult
+   - Should be reduced or consolidated
+
 ## Session Statistics
 
 - **Beads Closed**: 1 (hai-mfmn)
-- **Beads Created**: 1 (hai-ibe1)
-- **Git Commits**: 5
+- **Beads Created**: 2 (hai-ibe1, hai-ylmi)
+- **Git Commits**: 6
 - **Files Created**: 1
 - **Files Modified**: 11
 - **Lines Added**: ~400+
