@@ -217,3 +217,50 @@ func (s *APIServer) HandleUpdateBlockquoteContact(w http.ResponseWriter, r *http
 	})
 }
 
+// HandleGetLifelogParticipants handles GET /api/lifelogs/{lifelogId}/participants
+// Returns a list of unique contact IDs for participants in the conversation
+func (s *APIServer) HandleGetLifelogParticipants(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, &ErrMethodNotAllowed{Method: r.Method})
+		return
+	}
+
+	lifelogID := chi.URLParam(r, "lifelogId")
+	if lifelogID == "" {
+		writeError(w, http.StatusBadRequest, &ErrBadRequest{Message: "lifelog ID is required"})
+		return
+	}
+
+	ctx := r.Context()
+
+	// Fetch all blockquotes for this lifelog
+	blockquotes, err := s.storage.GetLifelogBlockquotesByLifelog(ctx, lifelogID)
+	if err != nil {
+		log.Printf("[ERROR] Failed to get blockquotes for lifelog %s: %v", lifelogID, err)
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Extract unique contact IDs (where contact_id is not nil and not empty)
+	contactIDSet := make(map[string]bool)
+	for _, bq := range blockquotes {
+		if bq.ContactID != nil && *bq.ContactID != "" {
+			contactIDSet[*bq.ContactID] = true
+		}
+	}
+
+	// Convert set to slice
+	contactIDs := make([]string, 0, len(contactIDSet))
+	for contactID := range contactIDSet {
+		contactIDs = append(contactIDs, contactID)
+	}
+
+	// Return participants list
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"lifelog_id":  lifelogID,
+		"participants": contactIDs,
+		"count":       len(contactIDs),
+	})
+}
+

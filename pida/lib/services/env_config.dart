@@ -53,6 +53,20 @@ class EnvConfig {
     return deviceId.isEmpty ? null : deviceId;
   }
 
+  /// Get user name from environment
+  /// 
+  /// Used to identify the app user when displaying "You" in participant lists.
+  /// In the future, this will come from user settings/profile.
+  /// 
+  /// Returns null if not set (will default to "You" in UI)
+  static String? get userName {
+    const name = String.fromEnvironment(
+      'PIDA_USER_NAME',
+      defaultValue: '',
+    );
+    return name.isEmpty ? null : name;
+  }
+
   /// Check if API key is configured
   static bool get hasApiKey => limitlessApiKey != null;
 

@@ -69,6 +69,7 @@ func main() {
 		// Lifelogs endpoints
 		r.Route("/lifelogs", func(r chi.Router) {
 			r.Get("/", srv.HandleGetLifelogs)
+			r.Get("/{lifelogId}/participants", srv.HandleGetLifelogParticipants)
 		})
 
 		// Blockquotes endpoints

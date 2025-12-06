@@ -211,6 +211,18 @@ class ApiClient {
       throw _handleError(e);
     }
   }
+
+  // Get conversation participants (optimized endpoint)
+  Future<List<String>> getLifelogParticipants(String lifelogId) async {
+    try {
+      final response = await _dio.get('/api/lifelogs/$lifelogId/participants');
+      final data = response.data as Map<String, dynamic>;
+      final participants = data['participants'] as List<dynamic>;
+      return participants.map((id) => id as String).toList();
+    } on DioException catch (e) {
+      throw _handleError(e);
+    }
+  }
 }
 
 /// Provider for API client

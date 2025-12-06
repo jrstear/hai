@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pida/models/contact.dart';
 import 'package:pida/providers/contacts_provider.dart';
+import 'package:pida/providers/config_provider.dart';
 import 'package:pida/providers/filter_provider.dart';
 import 'package:pida/widgets/contact_avatar.dart';
 
@@ -23,6 +24,9 @@ class ConversationParticipantsDisplay extends ConsumerWidget {
   /// List of participant contact IDs
   final List<String> participantContactIds;
   
+  /// Whether "You" (the app user) is a participant
+  final bool hasUser;
+  
   /// Optional callback when + button is tapped
   final VoidCallback? onAddTap;
 
@@ -30,12 +34,33 @@ class ConversationParticipantsDisplay extends ConsumerWidget {
     super.key,
     required this.lifelogId,
     required this.participantContactIds,
+    this.hasUser = false,
     this.onAddTap,
   });
+
+  /// Build "You" avatar for the app user
+  Widget _buildYouAvatar(BuildContext context, String? userName) {
+    final displayName = userName ?? 'You';
+    return Container(
+      padding: const EdgeInsets.all(2), // Border width
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Theme.of(context).colorScheme.primary,
+          width: 2,
+        ),
+      ),
+      child: ContactAvatar(
+        name: displayName,
+        size: 32,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final contactsAsync = ref.watch(contactsProvider);
+    final userName = ref.watch(userNameProvider);
 
     return contactsAsync.when(
       data: (contactListResponse) {
@@ -74,6 +99,13 @@ class ConversationParticipantsDisplay extends ConsumerWidget {
                   ),
                 );
               }),
+              
+              // Add "You" avatar if user is a participant (always show last before + button)
+              if (hasUser)
+                Container(
+                  margin: const EdgeInsets.only(right: 4),
+                  child: _buildYouAvatar(context, userName),
+                ),
               
               // Add button (always at far right)
               IconButton(

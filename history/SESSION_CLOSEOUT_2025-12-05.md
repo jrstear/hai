@@ -1,7 +1,7 @@
 # Session Closeout - December 5, 2025
 
 ## Overview
-Added `contact_id` field to blockquote schema for persistence, implemented API endpoint for storing blockquote-to-contact associations, and added calendar day view refresh when navigating back from conversation screen. Partially working implementation with scrolling behavior issue to be fixed.
+Fixed Riverpod provider modification error in conversation screen, resolved scrolling behavior on calendar day view, and created bead for implementing swipe gestures. The blockquote-to-contact association system is fully functional with persistence.
 
 ## Major Accomplishments
 
@@ -57,7 +57,22 @@ Added `contact_id` field to blockquote schema for persistence, implemented API e
   - Scrolling should stop at first/last conversation but currently doesn't
   - Created bead `hai-ibe1` to track this issue
 
-### 4. Blockquote-Contact Association UI Updates
+### 4. Fix Riverpod Provider Modification Error
+- **Problem**: Conversation screen threw error: "Tried to modify a provider while the widget tree was building"
+- **Root Cause**: `_initializeParticipants` method was modifying `conversationParticipantsProvider` during widget build
+- **Solution**: Wrapped provider state modification in `WidgetsBinding.instance.addPostFrameCallback` to defer until after build completes
+- **Result**: Conversation screen now loads without errors
+
+### 5. Fix Calendar Day View Scrolling
+- **Problem**: After navigating back from conversation, scrolling on calendar day view was broken
+- **Root Cause**: `GestureDetector` with `behavior: HitTestBehavior.opaque` was wrapping entire body and blocking ListView scroll gestures
+- **Solution**:
+  - Removed the `GestureDetector` wrapper that was blocking scroll gestures
+  - Added `AlwaysScrollableScrollPhysics` to ListView to ensure scrolling is enabled
+  - Fixed `_scrollToBottom()` to only scroll on initial load (when near top), not on every data refresh
+- **Result**: Scrolling now works properly both up and down, stops at first/last conversation boundaries
+
+### 6. Blockquote-Contact Association UI Updates
 - **Conversation Screen**:
   - Unknown speaker icons are clickable
   - Clicking opens people selector drawer
@@ -79,12 +94,25 @@ Added `contact_id` field to blockquote schema for persistence, implemented API e
   - API endpoint implemented
   - Flutter integration complete
 
+### Closed
+- **hai-ibe1**: "Fix scrolling behavior on calendar day view after navigation from conversation" - Fixed
+  - Removed `GestureDetector` with `HitTestBehavior.opaque` that was blocking ListView scroll gestures
+  - Added `AlwaysScrollableScrollPhysics` to ensure scrolling is enabled
+  - Fixed `_scrollToBottom()` to only scroll on initial load, not on every data refresh
+  - Scrolling now works properly both up and down
+
+- **hai-jqcr**: "Fix Riverpod provider modification during widget build in conversation screen" - Fixed
+  - Wrapped provider state modification in `WidgetsBinding.instance.addPostFrameCallback` to defer until after build
+  - Resolved error: "Tried to modify a provider while the widget tree was building"
+  - Conversation screen now loads without errors
+
 ### Created
-- **hai-ibe1**: "Fix scrolling behavior on calendar day view after navigation from conversation" (Priority 2, Bug)
-  - Scrolling up should stop at first conversation
-  - Scrolling down should stop at last conversation
-  - Currently shows "jiggly row movement" but scrolling doesn't work properly
-  - Likely relates to scroll controller state or scroll position restoration after data refresh
+- **hai-vb8v**: "Add swipe left/right gestures for next/previous day on calendar day screen" (Priority 2, Feature)
+  - Implement horizontal swipe gestures to navigate between days
+  - Swipe left (right-to-left) -> next day (same as > button)
+  - Swipe right (left-to-right) -> previous day (same as < button)
+  - Should work on both mobile and web platforms
+  - Note: Browser back/forward navigation interference may need to be addressed separately (see `hai-cbew`)
 
 - **hai-ylmi**: "Reduce Flutter log output when navigating back from conversation to calendar" (Priority 3, Task)
   - Excessive log output makes debugging difficult
@@ -159,6 +187,11 @@ Added `contact_id` field to blockquote schema for persistence, implemented API e
    - API endpoint implementation
    - Note: Scrolling behavior needs fixing (see bead hai-ibe1)
 
+6. **Latest fixes** (not yet committed):
+   - Fix Riverpod provider modification error in conversation screen (hai-jqcr)
+   - Fix scrolling behavior on calendar day view (hai-ibe1)
+   - Create bead for swipe gestures implementation (hai-vb8v)
+
 ## Files Created/Modified
 
 ### New Files
@@ -199,28 +232,26 @@ Added `contact_id` field to blockquote schema for persistence, implemented API e
 
 ## Known Issues
 
-1. **Scrolling Behavior** (hai-ibe1):
-   - After navigating back from conversation, scrolling on calendar day view is broken
-   - Shows "jiggly row movement" but actual scrolling doesn't work
-   - Scrolling should stop at first/last conversation but doesn't
-   - Likely related to scroll controller state after data refresh
-
-2. **Calendar Refresh**:
-   - Currently refreshes entire day's data (works but not optimal)
-   - Could be optimized with participants-only endpoint (future enhancement)
-
-3. **Excessive Logging** (hai-ylmi):
+1. **Excessive Logging** (hai-ylmi):
    - Too much Flutter log output when navigating back from conversation
    - Makes debugging difficult
    - Should be reduced or consolidated
 
+2. **Calendar Refresh**:
+   - Currently refreshes entire day's data (works but not optimal)
+   - Could be optimized with participants-only endpoint (future enhancement - hai-5mmj)
+
+3. **Swipe Gestures** (hai-vb8v):
+   - Need to implement swipe left/right gestures for next/previous day navigation
+   - Browser back/forward navigation interference may need separate handling (hai-cbew)
+
 ## Session Statistics
 
-- **Beads Closed**: 1 (hai-mfmn)
-- **Beads Created**: 2 (hai-ibe1, hai-ylmi)
-- **Git Commits**: 6
+- **Beads Closed**: 3 (hai-mfmn, hai-ibe1, hai-jqcr)
+- **Beads Created**: 2 (hai-vb8v, hai-ylmi)
+- **Git Commits**: 7+ (including fixes for scrolling and Riverpod errors)
 - **Files Created**: 1
-- **Files Modified**: 11
+- **Files Modified**: 11+
 - **Lines Added**: ~400+
 
 ## Key Achievements
@@ -230,5 +261,7 @@ Added `contact_id` field to blockquote schema for persistence, implemented API e
 ✅ **Calendar refresh on navigation** - Updated data after returning from conversation  
 ✅ **Immediate UI updates** - Instant feedback for user actions  
 ✅ **Error handling** - Graceful failure if API calls fail  
+✅ **Scrolling fixed** - Calendar day view scrolling now works properly  
+✅ **Riverpod error fixed** - Conversation screen loads without build errors  
 
-The blockquote-to-contact association system is now fully functional with persistence. Users can associate unknown speakers with contacts from the conversation view, and these associations persist across app restarts. The calendar view refreshes when navigating back to show updated participants, though scrolling behavior needs to be fixed.
+The blockquote-to-contact association system is now fully functional with persistence. Users can associate unknown speakers with contacts from the conversation view, and these associations persist across app restarts. The calendar view refreshes when navigating back to show updated participants, and scrolling works correctly. The app is ready for the next session to implement swipe gestures for day navigation.

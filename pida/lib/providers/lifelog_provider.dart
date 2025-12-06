@@ -46,7 +46,9 @@ class ConversationSummary {
   final String lifelogId;
   final String? title;
   final String startTime; // HH:MM format
-  final List<String> participantNames;
+  final List<String> participantNames; // Speaker names (fallback)
+  final List<String> participantContactIds; // Contact IDs (when associated)
+  final bool hasUser; // Whether "You" is a participant
   final String summary; // First few words or title
   final ConversationTiming? timing;
 
@@ -55,6 +57,8 @@ class ConversationSummary {
     this.title,
     required this.startTime,
     required this.participantNames,
+    required this.participantContactIds,
+    required this.hasUser,
     required this.summary,
     this.timing,
   });
@@ -80,11 +84,24 @@ List<ConversationSummary> extractConversationSummaries(LifelogResponse response)
     // Extract start time and convert to 12-hour AM/PM format in local time
     final startTime = _formatTimeTo12Hour(firstBlockquote.startTime, firstBlockquote.startOffsetMs);
     
-    // Get unique participant names
+    // Get unique participant contact IDs (when blockquotes are associated with contacts)
+    final participantContactIds = blockquotes
+        .where((bq) => bq.contactId != null && bq.contactId!.isNotEmpty)
+        .map((bq) => bq.contactId!)
+        .toSet()
+        .toList();
+    
+    // Get unique participant names (speaker names, fallback when no contact ID)
     final participantNames = blockquotes
         .map((bq) => bq.speakerName)
         .toSet()
         .toList();
+    
+    // Check if "You" is a participant (speaker_name is "You" or speakerIdentifier is "user")
+    final hasUser = blockquotes.any((bq) {
+      final speakerName = bq.speakerName.toLowerCase().trim();
+      return speakerName == 'you';
+    });
     
     // Get summary (title or first few words of first blockquote)
     final summary = firstBlockquote.lifelogTitle ?? 
@@ -100,6 +117,8 @@ List<ConversationSummary> extractConversationSummaries(LifelogResponse response)
       title: firstBlockquote.lifelogTitle,
       startTime: startTime,
       participantNames: participantNames,
+      participantContactIds: participantContactIds,
+      hasUser: hasUser,
       summary: summary,
       timing: timing,
     ));

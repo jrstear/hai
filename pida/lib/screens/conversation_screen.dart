@@ -98,8 +98,13 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     }
 
     // Store matched contact IDs in provider
+    // Defer to post-frame callback to avoid modifying provider during build
     if (matchedContactIds.isNotEmpty) {
-      ref.read(conversationParticipantsProvider(lifelogId).notifier).state = matchedContactIds;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref.read(conversationParticipantsProvider(lifelogId).notifier).state = matchedContactIds;
+        }
+      });
     }
     
     _initializedLifelogId = lifelogId;
@@ -190,6 +195,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               .map((bq) => bq.speakerName)
               .toSet()
               .toList();
+          
+          // Check if "You" is a participant
+          final hasUser = participantNames.any((name) => 
+              name.toLowerCase().trim() == 'you');
 
           // Initialize conversation participants from blockquotes (match speaker names to contacts)
           return contactsAsync.when(
@@ -208,6 +217,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 firstBlockquote,
                 sortedBlockquotes,
                 participantNames,
+                hasUser,
                 timing,
               );
             },
@@ -219,6 +229,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               firstBlockquote,
               sortedBlockquotes,
               participantNames,
+              hasUser,
               timing,
             ),
           );
@@ -239,6 +250,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     Blockquote firstBlockquote,
     List<Blockquote> blockquotes,
     List<String> participantNames,
+    bool hasUser,
     ConversationTiming? timing,
   ) {
     final participantContactIds = ref.watch(conversationParticipantsProvider(lifelogId));
@@ -252,6 +264,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           rightContent: ConversationParticipantsDisplay(
             lifelogId: lifelogId,
             participantContactIds: participantContactIds,
+            hasUser: hasUser,
             onAddTap: () => _openPeopleSelector(context, ref, lifelogId),
           ),
           showBorder: true,
@@ -369,6 +382,35 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                           (c) => c.id == associatedContactId,
                           orElse: () => Contact(id: associatedContactId, name: 'Unknown'),
                         );
+                        
+                        // Check if contact name matches speaker name (for highlighting)
+                        final nameMatches = _namesMatch(
+                          _normalizeName(blockquote.speakerName),
+                          _normalizeName(contact.name),
+                        );
+                        
+                        // Add green border/background if name matches
+                        if (nameMatches) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: Colors.green,
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              contact.name,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.green.shade700,
+                                  ),
+                            ),
+                          );
+                        }
+                        
                         return Text(
                           contact.name,
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -450,12 +492,36 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             (c) => c.id == associatedContactId,
             orElse: () => Contact(id: associatedContactId, name: 'Unknown'),
           );
-          return ContactAvatar(
+          
+          // Check if contact name matches speaker name (for highlighting)
+          final nameMatches = _namesMatch(
+            _normalizeName(blockquote.speakerName),
+            _normalizeName(contact.name),
+          );
+          
+          final avatar = ContactAvatar(
             name: contact.name,
             pictureUrl: contact.pictureUrl,
             favoriteColor: contact.favoriteColor,
             size: 24,
           );
+          
+          // Add green border if name matches speaker name
+          if (nameMatches) {
+            return Container(
+              padding: const EdgeInsets.all(2), // Border width
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.green,
+                  width: 2,
+                ),
+              ),
+              child: avatar,
+            );
+          }
+          
+          return avatar;
         },
         loading: () => const SizedBox(
           width: 24,
@@ -519,7 +585,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final period = hour >= 12 ? 'PM' : 'AM';
     final hour12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
 
-    return '${hour12}:${minute.toString().padLeft(2, '0')} $period';
+    return '$hour12:${minute.toString().padLeft(2, '0')} $period';
   }
 
   /// Build play/pause button for a blockquote
