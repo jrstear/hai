@@ -88,7 +88,8 @@ func (c *ElasticsearchContacts) ensureIndex(ctx context.Context) error {
 					"type": "keyword",
 				},
 				"picture_url": map[string]interface{}{
-					"type": "keyword",
+					"type":  "text",
+					"index": false, // Don't index image data, just store it
 				},
 				"favorite_color": map[string]interface{}{
 					"type": "keyword",
@@ -377,23 +378,23 @@ func (c *ElasticsearchContacts) UpdateContact(ctx context.Context, id string, up
 
 // ContactFilters represents filters for listing contacts
 type ContactFilters struct {
-	Known   *bool  // Filter by known status
-	Search  string // Search by name/email
+	Known  *bool  // Filter by known status
+	Search string // Search by name/email
 }
 
 // Helper functions for document conversion
 
 func (c *ElasticsearchContacts) contactToDoc(contact *Contact) map[string]interface{} {
 	doc := map[string]interface{}{
-		"id":         contact.ID,
+		"id":          contact.ID,
 		"external_id": contact.ExternalID,
-		"name":       contact.Name,
-		"given_name": contact.GivenName,
+		"name":        contact.Name,
+		"given_name":  contact.GivenName,
 		"family_name": contact.FamilyName,
-		"known":      contact.Known,
-		"created_at": contact.CreatedAt.Format(time.RFC3339),
-		"updated_at": contact.UpdatedAt.Format(time.RFC3339),
-		"source":     contact.Source,
+		"known":       contact.Known,
+		"created_at":  contact.CreatedAt.Format(time.RFC3339),
+		"updated_at":  contact.UpdatedAt.Format(time.RFC3339),
+		"source":      contact.Source,
 	}
 
 	if contact.Email != "" {
@@ -463,4 +464,3 @@ func (c *ElasticsearchContacts) docToContact(doc map[string]interface{}) (*Conta
 
 	return contact, nil
 }
-
