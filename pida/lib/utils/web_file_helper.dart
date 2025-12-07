@@ -23,3 +23,26 @@ Future<Uint8List> readWebFileAsBytes(dynamic file) async {
 String getWebFileName(dynamic file) {
   return (file as html.File).name;
 }
+
+/// Prevent browser's default drag-and-drop behavior
+/// This prevents files from being downloaded when dragged over the page
+void preventDefaultDragBehavior() {
+  final document = html.window.document;
+  
+  // Prevent default on dragover (allows drop)
+  document.addEventListener('dragover', (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  
+  // Prevent default on drop (prevents navigation/download)
+  document.addEventListener('drop', (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+}
+
+/// Get the HTML document (for use in widgets)
+dynamic getDocument() {
+  return html.window.document;
+}

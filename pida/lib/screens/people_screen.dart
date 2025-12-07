@@ -13,6 +13,7 @@ import 'package:pida/services/api_client.dart';
 import 'package:pida/widgets/contact_avatar.dart';
 import 'package:pida/widgets/error_widget.dart' as error_widget;
 import 'package:pida/widgets/loading_widget.dart';
+import 'package:pida/widgets/web_file_drop_zone.dart';
 import 'package:pida/utils/web_file_helper.dart' if (dart.library.io) 'package:pida/utils/web_file_helper_stub.dart';
 
 /// People screen (Contacts page)
@@ -218,87 +219,18 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
   }
 
   Widget _buildWebDropZone() {
-    return Listener(
-      onPointerDown: (event) {
-        // Handle click to select file
-        _selectVCardFile();
+    return WebFileDropZone(
+      isDragging: _isDragging,
+      isUploading: _isUploading,
+      onFileDropped: (file) async {
+        await _handleWebFile(file);
       },
-      child: DragTarget<Object>(
-        onWillAcceptWithDetails: (details) {
-          if (kIsWeb) {
-            try {
-              // On web, data should be html.File
-              final file = details.data as dynamic;
-              final fileName = (file.name as String?)?.toLowerCase() ?? '';
-              if (fileName.endsWith('.vcf') || fileName.endsWith('.vcard')) {
-                setState(() {
-                  _isDragging = true;
-                });
-                return true;
-              }
-            } catch (e) {
-              // Ignore type errors
-            }
-          }
-          return false;
-        },
-        onLeave: (data) {
-          setState(() {
-            _isDragging = false;
-          });
-        },
-        onAcceptWithDetails: (details) async {
-          setState(() {
-            _isDragging = false;
-          });
-          if (kIsWeb) {
-            await _handleWebFile(details.data);
-          }
-        },
-        builder: (context, candidateData, rejectedData) {
-          return MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: _isDragging
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).dividerColor,
-                  width: _isDragging ? 2 : 1,
-                ),
-                borderRadius: BorderRadius.circular(8),
-                color: _isDragging
-                    ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
-                    : Theme.of(context).colorScheme.surfaceContainerHighest,
-              ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.upload_file,
-                  size: 20,
-                  color: _isDragging
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurface,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  _isUploading
-                      ? 'Uploading...'
-                      : 'Drop vCard or click',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: _isDragging
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.onSurface,
-                      ),
-                ),
-              ],
-            ),
-            ),
-          );
-        },
-      ),
+      onDragStateChanged: (dragging) {
+        setState(() {
+          _isDragging = dragging;
+        });
+      },
+      onTap: _selectVCardFile,
     );
   }
 
