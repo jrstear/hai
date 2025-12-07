@@ -1,34 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pida/models/contact.dart';
-import 'package:pida/providers/contacts_provider.dart';
-import 'package:pida/providers/config_provider.dart';
 import 'package:pida/widgets/contact_avatar.dart';
 import 'package:pida/widgets/speaker_avatar.dart';
 
 /// Conversation participants display widget
 /// 
-/// Displays conversation participants as avatars in alphabetical order.
-/// This shows conversation data (participants), not a filter.
+/// Displays conversation participants based on ordered distinct {speaker_name, contact_id} tuples.
+/// Shows participants in order of first appearance in conversation.
 /// 
 /// Features:
-/// - Contact avatars (using ContactAvatar widget)
-/// - Alphabetical sorting by name
+/// - Contact avatars (if contact_id exists) with picture or initials
+/// - Speaker name initials (if no contact_id)
+/// - Special green border for auto-matched contacts (both contact.name and speaker_name non-null)
+/// - "?" icon for "Unknown" speakers
 /// - Right-justified, expands leftward
 /// - + button at far right to add people
-/// - Supports smart wrapping with title
 class ConversationParticipantsDisplay extends ConsumerWidget {
   /// Lifelog ID for this conversation
   final String lifelogId;
   
-  /// List of participant contact IDs
-  final List<String> participantContactIds;
+  /// Ordered list of distinct {speaker_name, contact_id} tuples from blockquotes
+  final List<({String speakerName, String? contactId})> orderedParticipants;
   
-  /// Whether "You" (the app user) is a participant
-  final bool hasUser;
-  
-  /// Whether "Unknown" speakers are present in the conversation
-  final bool hasUnknown;
+  /// List of contacts to lookup contact_id values
+  final List<Contact> contacts;
   
   /// Optional callback when + button is tapped
   final VoidCallback? onAddTap;
@@ -36,197 +32,124 @@ class ConversationParticipantsDisplay extends ConsumerWidget {
   const ConversationParticipantsDisplay({
     super.key,
     required this.lifelogId,
-    required this.participantContactIds,
-    this.hasUser = false,
-    this.hasUnknown = false,
+    required this.orderedParticipants,
+    required this.contacts,
     this.onAddTap,
   });
 
-  /// Build "You" avatar for the app user
-  Widget _buildYouAvatar(BuildContext context, String? userName, List<Contact> contacts) {
-    final displayName = userName ?? 'You';
-    
-    // Try to find the contact that matches the user's name
-    Contact? userContact;
-    if (userName != null && userName.isNotEmpty) {
-      try {
-        userContact = contacts.firstWhere(
-          (contact) {
-            final normalizedContactName = contact.name.trim().toLowerCase();
-            final normalizedUserName = userName.trim().toLowerCase();
-            // Exact match
-            if (normalizedContactName == normalizedUserName) return true;
-            // Check if one name contains the other (for partial matches)
-            if (normalizedContactName.contains(normalizedUserName) || 
-                normalizedUserName.contains(normalizedContactName)) {
-              final shorter = normalizedContactName.length < normalizedUserName.length 
-                  ? normalizedContactName 
-                  : normalizedUserName;
-              // Only allow if the shorter name is at least 3 characters
-              if (shorter.length >= 3) return true;
-            }
-            return false;
-          },
-        );
-      } catch (e) {
-        // No matching contact found, use null
-        userContact = null;
-      }
-    }
-    
-    return Container(
-      padding: const EdgeInsets.all(2), // Border width
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: Theme.of(context).colorScheme.primary,
-          width: 2,
-        ),
-      ),
-      child: ContactAvatar(
-        name: displayName,
-        pictureUrl: userContact?.pictureUrl,
-        favoriteColor: userContact?.favoriteColor,
-        size: 32,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final contactsAsync = ref.watch(contactsProvider);
-    final userName = ref.watch(userNameProvider);
-
-    return contactsAsync.when(
-      data: (contactListResponse) {
-        // Get contact details for participant IDs
-        final participantContacts = participantContactIds
-            .map((id) => contactListResponse.contacts.firstWhere(
-                  (contact) => contact.id == id,
-                  orElse: () => Contact(
-                    id: id,
-                    name: 'Unknown',
-                  ),
-                ))
-            .toList();
-
-        // Sort alphabetically by name
-        participantContacts.sort((a, b) {
-          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-        });
-
-        // Build avatar row (right-aligned, expanding leftward)
-        return Align(
-          alignment: Alignment.centerRight,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              // Avatars (right to left, so reverse the list)
-              ...participantContacts.reversed.map((contact) {
-                return Container(
-                  margin: const EdgeInsets.only(right: 4),
-                  child: ContactAvatar(
-                    name: contact.name,
-                    pictureUrl: contact.pictureUrl,
-                    favoriteColor: contact.favoriteColor,
-                    size: 32,
-                  ),
-                );
-              }),
-              
-              // Add "You" avatar if user is a participant
-              if (hasUser)
-                Container(
-                  margin: const EdgeInsets.only(right: 4),
-                  child: _buildYouAvatar(context, userName, contactListResponse.contacts),
-                ),
-              
-              // Add "?" icon for Unknown participants (consistent with calendar page)
-              if (hasUnknown)
-                Container(
-                  margin: const EdgeInsets.only(right: 4),
-                  child: const SpeakerAvatar(
-                    speakerName: 'Unknown',
-                    size: 32,
-                  ),
-                ),
-              
-              // Add button (always at far right)
-              IconButton(
-                icon: const Icon(Icons.add_circle_outline),
-                onPressed: onAddTap,
-                tooltip: 'Add people to conversation',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
-            ],
+    final avatarWidgets = <Widget>[];
+    
+    // Limit to 3 avatars (current limit)
+    final participantsToShow = orderedParticipants.take(3).toList();
+    
+    for (final participant in participantsToShow) {
+      final speakerName = participant.speakerName;
+      final contactId = participant.contactId;
+      
+      // Special case: "Unknown" speakers show "?" icon
+      if (speakerName.trim().toLowerCase() == 'unknown') {
+        avatarWidgets.add(
+          Container(
+            margin: const EdgeInsets.only(right: 4),
+            child: const SpeakerAvatar(
+              speakerName: 'Unknown',
+              size: 32,
+            ),
           ),
         );
-      },
-      loading: () => Align(
-        alignment: Alignment.centerRight,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            if (participantContactIds.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${participantContactIds.length}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-              ),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline),
-              onPressed: onAddTap,
-              tooltip: 'Add people to conversation',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
+        continue;
+      }
+      
+      // If contact_id exists, try to find the contact
+      Contact? contact;
+      if (contactId != null && contactId.isNotEmpty) {
+        try {
+          contact = contacts.firstWhere((c) => c.id == contactId);
+        } catch (e) {
+          // Contact not found, will fall back to speaker name initials
+          contact = null;
+        }
+      }
+      
+      Widget avatar;
+      bool showSpecialBorder = false;
+      
+      if (contact != null) {
+        // Contact found - show contact avatar (picture if available, else initials)
+        avatar = ContactAvatar(
+          name: contact.name,
+          pictureUrl: contact.pictureUrl,
+          favoriteColor: contact.favoriteColor,
+          size: 32,
+        );
+        
+        // Show green border if both contact.name and speaker_name are non-null
+        // This indicates auto-matched from Limitless/lifelog onboarding
+        if (contact.name.isNotEmpty && speakerName.isNotEmpty) {
+          showSpecialBorder = true;
+        }
+      } else {
+        // No contact_id or contact not found - show speaker name initials
+        avatar = SpeakerAvatar(
+          speakerName: speakerName,
+          size: 32,
+        );
+      }
+      
+      // Wrap with border if needed
+      Widget avatarWidget = avatar;
+      if (showSpecialBorder) {
+        avatarWidget = Container(
+          padding: const EdgeInsets.all(2), // Border width
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.green,
+              width: 2,
             ),
-          ],
-        ),
-      ),
-      error: (error, stack) => Align(
-        alignment: Alignment.centerRight,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            if (participantContactIds.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${participantContactIds.length}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onErrorContainer,
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-              ),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline),
-              onPressed: onAddTap,
-              tooltip: 'Add people to conversation',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-            ),
-          ],
-        ),
+          ),
+          child: avatar,
+        );
+      } else {
+        avatarWidget = Container(
+          margin: const EdgeInsets.only(right: 4),
+          child: avatar,
+        );
+      }
+      
+      // Add margin if we added border (border container doesn't have margin)
+      if (showSpecialBorder) {
+        avatarWidget = Container(
+          margin: const EdgeInsets.only(right: 4),
+          child: avatarWidget,
+        );
+      }
+      
+      avatarWidgets.add(avatarWidget);
+    }
+    
+    // Build avatar row (right-aligned, expanding leftward)
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          // Participant avatars (right to left)
+          ...avatarWidgets.reversed,
+          
+          // Add button (always at far right)
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            onPressed: onAddTap,
+            tooltip: 'Add people to conversation',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+        ],
       ),
     );
   }
 }
-

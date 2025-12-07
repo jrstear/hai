@@ -507,12 +507,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             final speakerNamesToShow = summary.participantNames
                                 .where((name) {
                                   final normalized = _normalizeName(name);
-                                  // Exclude user name matches, "unknown", and names that already have contact avatars
-                                  // (Onboarding replaces "You" with user_name, so we only need to match user_name)
+                                  // Exclude user name matches, "unknown", "you", and names that already have contact avatars
+                                  // (Onboarding replaces "You" with user_name before storage, so "You" shouldn't appear)
                                   final isUser = userName != null && userName.isNotEmpty && 
                                                  _namesMatch(_normalizeName(userName), normalized);
                                   return !isUser && 
                                          normalized != 'unknown' &&
+                                         normalized != 'you' &&
                                          !addedContactNames.contains(normalized);
                                 })
                                 .take(remainingSlots)
@@ -549,8 +550,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                               filteredContactIds.length + 
                               summary.participantNames.where((n) {
                                 final normalized = _normalizeName(n);
-                                // Exclude "unknown" and user name matches
-                                if (normalized == 'unknown') return false;
+                                // Exclude "unknown", "you", and user name matches
+                                if (normalized == 'unknown' || normalized == 'you') return false;
                                 if (userName != null && userName.isNotEmpty && 
                                     _namesMatch(_normalizeName(userName), normalized)) {
                                   return false;
