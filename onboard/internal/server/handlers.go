@@ -50,7 +50,7 @@ func NewServer(outputDir string) *Server {
 			log.Printf("Continuing without Elasticsearch export. Set ELASTICSEARCH_URL to enable export.")
 		} else {
 			srv.storage = esStorage
-			srv.exporter = export2elastic.NewExporter(esStorage)
+			srv.exporter = export2elastic.NewExporterWithESURL(esStorage, esURL)
 			log.Printf("Elasticsearch storage initialized successfully")
 		}
 	} else {

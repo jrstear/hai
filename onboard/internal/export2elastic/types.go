@@ -13,12 +13,21 @@ import (
 // Exporter handles exporting diarization results to Elasticsearch
 type Exporter struct {
 	storage storage.Storage
+	esURL   string // Optional ES URL for querying contacts
 }
 
 // NewExporter creates a new exporter instance
 func NewExporter(s storage.Storage) *Exporter {
 	return &Exporter{
 		storage: s,
+	}
+}
+
+// NewExporterWithESURL creates a new exporter instance with ES URL for contact querying
+func NewExporterWithESURL(s storage.Storage, esURL string) *Exporter {
+	return &Exporter{
+		storage: s,
+		esURL:   esURL,
 	}
 }
 
@@ -32,7 +41,7 @@ func (e *Exporter) ExportResult(ctx context.Context, result *diarization.Result,
 	if err != nil {
 		return 0, 0, false, err
 	}
-	
+
 	// Count how many speakers were matched (non-nil values)
 	matchedCount := 0
 	for _, speakerID := range speakerMap {
@@ -52,7 +61,7 @@ func (e *Exporter) ExportResult(ctx context.Context, result *diarization.Result,
 	if err != nil && err != storage.ErrNotFound {
 		return matchedCount, 0, false, err
 	}
-	
+
 	// If segments already exist, skip indexing (similar to how diarization skips if JSON exists)
 	if len(existingSegments) > 0 {
 		// Segments already exist - skip indexing
@@ -120,7 +129,7 @@ func (e *Exporter) matchSpeakers(ctx context.Context, result *diarization.Result
 			ctx,
 			embedding,
 			storage.SimilarityThreshold,
-			10, // Get multiple matches to find the highest similarity
+			10,   // Get multiple matches to find the highest similarity
 			true, // onlyCentroids: only match against centroid speakers
 		)
 		if err != nil {
@@ -131,7 +140,7 @@ func (e *Exporter) matchSpeakers(ctx context.Context, result *diarization.Result
 		if len(matches) > 0 && matches[0].Similarity >= storage.SimilarityThreshold {
 			// Found a match - use the highest similarity match (first in sorted results)
 			speakerID = &matches[0].Speaker.ID
-			
+
 			// Update last_seen timestamp
 			update := &storage.Speaker{
 				ID:       *speakerID,
@@ -318,4 +327,3 @@ func (e *Exporter) transformSegments(result *diarization.Result, speakerMap map[
 
 	return segments, nil
 }
-

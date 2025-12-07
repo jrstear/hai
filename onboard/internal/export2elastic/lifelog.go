@@ -73,6 +73,18 @@ func (e *Exporter) ExportLifelogs(ctx context.Context, lifelogFilePath string) (
 		return len(existingLifelogs), totalBlockquotes, true, nil
 	}
 
+	// Load contacts for name matching (optional - contacts may not be loaded yet)
+	var contacts []Contact
+	if e.esURL != "" {
+		esClient, err := e.createESClient(e.esURL)
+		if err == nil {
+			loadedContacts, err := e.loadContacts(ctx, esClient)
+			if err == nil {
+				contacts = loadedContacts
+			}
+		}
+	}
+
 	// Export lifelogs and blockquotes
 	lifelogCount := 0
 	blockquoteCount := 0
@@ -151,6 +163,14 @@ func (e *Exporter) ExportLifelogs(ctx context.Context, lifelogFilePath string) (
 					blockquote.SpeakerID = content.SpeakerIdentifier
 				}
 
+				// Auto-associate with contact if speaker_name matches a contact name
+				if len(contacts) > 0 {
+					matchedContactID := e.matchContactByName(ctx, content.SpeakerName, contacts)
+					if matchedContactID != nil {
+						blockquote.ContactID = matchedContactID
+					}
+				}
+
 				blockquotes = append(blockquotes, blockquote)
 			}
 		}
@@ -199,4 +219,3 @@ func extractDateFromLifelogPath(filePath string) (string, error) {
 
 	return "", fmt.Errorf("could not extract date from path: %s", filePath)
 }
-
