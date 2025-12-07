@@ -27,6 +27,8 @@ class WebFileDropZone extends StatefulWidget {
 class _WebFileDropZoneState extends State<WebFileDropZone> {
   final GlobalKey _key = GlobalKey();
   bool _isListening = false;
+  bool _mouseOverDropZone = false;
+  bool _draggingValidFile = false;
 
   @override
   void initState() {
@@ -38,40 +40,6 @@ class _WebFileDropZoneState extends State<WebFileDropZone> {
     }
   }
 
-  /// Check if the drag event is over this drop zone
-  bool _isDragOverDropZone(dynamic e) {
-    try {
-      final renderObject = _key.currentContext?.findRenderObject();
-      if (renderObject == null || renderObject is! RenderBox) return false;
-
-      final box = renderObject;
-      
-      // Get mouse position from event (clientX/clientY are viewport coordinates)
-      final clientX = (e.clientX as num?)?.toDouble() ?? 0;
-      final clientY = (e.clientY as num?)?.toDouble() ?? 0;
-
-      // Convert widget position to global coordinates
-      final position = box.localToGlobal(Offset.zero);
-      final size = box.size;
-
-      // Check if mouse is within the drop zone bounds (using viewport coordinates)
-      // localToGlobal gives screen coordinates, but clientX/Y are viewport coordinates
-      // We need to account for scroll position
-      final scrollX = (e.view?.scrollX as num?)?.toDouble() ?? 0;
-      final scrollY = (e.view?.scrollY as num?)?.toDouble() ?? 0;
-      
-      // Position is in screen coordinates, convert to viewport by subtracting scroll
-      final viewportX = position.dx - scrollX;
-      final viewportY = position.dy - scrollY;
-
-      return clientX >= viewportX &&
-          clientX <= viewportX + size.width &&
-          clientY >= viewportY &&
-          clientY <= viewportY + size.height;
-    } catch (e) {
-      return false;
-    }
-  }
 
   @override
   void dispose() {
@@ -127,47 +95,99 @@ class _WebFileDropZoneState extends State<WebFileDropZone> {
     e.preventDefault();
     e.stopPropagation();
     
-    // Check if we're over the drop zone and if files are valid
+    // Check if files are valid vCard files
     final files = e.dataTransfer?.files;
+    bool hasValidFile = false;
     if (files != null && files.length > 0) {
       final file = files[0];
       final fileName = (file.name as String?)?.toLowerCase() ?? '';
-      if (fileName.endsWith('.vcf') || fileName.endsWith('.vcard')) {
-        // Only highlight if drag is over this specific drop zone
-        if (_isDragOverDropZone(e)) {
-          widget.onDragStateChanged(true);
-        } else {
-          widget.onDragStateChanged(false);
-        }
-      }
+      hasValidFile = fileName.endsWith('.vcf') || fileName.endsWith('.vcard');
     }
+    
+    // Update dragging state
+    if (hasValidFile != _draggingValidFile) {
+      _draggingValidFile = hasValidFile;
+    }
+    
+    // Check if we're over the drop zone and update highlight
+    final isOver = _checkIfOverDropZone(e);
+    if (isOver != _mouseOverDropZone) {
+      _mouseOverDropZone = isOver;
+    }
+    
+    _updateHighlightState();
   }
 
   void _handleDragLeave(dynamic e) {
     e.preventDefault();
     e.stopPropagation();
-    // Only clear highlight if we're leaving the drop zone
-    if (!_isDragOverDropZone(e)) {
-      widget.onDragStateChanged(false);
+    // Clear dragging state when drag leaves
+    if (_draggingValidFile) {
+      _draggingValidFile = false;
+      _mouseOverDropZone = false;
+      _updateHighlightState();
+    }
+  }
+
+  void _updateHighlightState() {
+    // Highlight only if dragging a valid file AND mouse is over drop zone
+    final shouldHighlight = _draggingValidFile && _mouseOverDropZone;
+    if (shouldHighlight != widget.isDragging) {
+      widget.onDragStateChanged(shouldHighlight);
+    }
+  }
+
+  /// Check if drag event is over the drop zone using simple bounds check
+  bool _checkIfOverDropZone(dynamic e) {
+    try {
+      if (!mounted) return false;
+      
+      final renderObject = _key.currentContext?.findRenderObject();
+      if (renderObject == null || renderObject is! RenderBox) return false;
+
+      // Get mouse position from event (viewport coordinates)
+      final clientX = (e.clientX as num?)?.toDouble() ?? 0;
+      final clientY = (e.clientY as num?)?.toDouble() ?? 0;
+
+      // Get widget bounds in screen coordinates
+      final box = renderObject;
+      final position = box.localToGlobal(Offset.zero);
+      final size = box.size;
+
+      // Get viewport scroll to convert screen to viewport coordinates
+      final scrollX = (e.view?.scrollX as num?)?.toDouble() ?? 0;
+      final scrollY = (e.view?.scrollY as num?)?.toDouble() ?? 0;
+      
+      // Convert widget position from screen to viewport coordinates
+      final viewportX = position.dx - scrollX;
+      final viewportY = position.dy - scrollY;
+
+      // Check if mouse is within widget bounds (in viewport coordinates)
+      return clientX >= viewportX &&
+          clientX <= viewportX + size.width &&
+          clientY >= viewportY &&
+          clientY <= viewportY + size.height;
+    } catch (e) {
+      return false;
     }
   }
 
   void _handleDrop(dynamic e) {
     e.preventDefault();
     e.stopPropagation();
-    widget.onDragStateChanged(false);
+    
+    // Clear dragging state on drop
+    _draggingValidFile = false;
+    _updateHighlightState();
 
     try {
       final files = e.dataTransfer?.files;
       if (files != null && files.length > 0) {
         final file = files[0];
         final fileName = (file.name as String?)?.toLowerCase() ?? '';
-        // Only process drop if it's over the drop zone
         if (fileName.endsWith('.vcf') || fileName.endsWith('.vcard')) {
-          if (_isDragOverDropZone(e)) {
-            // Call the callback to handle the file upload
-            widget.onFileDropped(file);
-          }
+          // Process the drop - upload the file
+          widget.onFileDropped(file);
         }
       }
     } catch (error) {

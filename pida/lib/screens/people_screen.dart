@@ -223,12 +223,16 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
       isDragging: _isDragging,
       isUploading: _isUploading,
       onFileDropped: (file) async {
-        await _handleWebFile(file);
+        if (mounted) {
+          await _handleWebFile(file);
+        }
       },
       onDragStateChanged: (dragging) {
-        setState(() {
-          _isDragging = dragging;
-        });
+        if (mounted) {
+          setState(() {
+            _isDragging = dragging;
+          });
+        }
       },
       onTap: _selectVCardFile,
     );
