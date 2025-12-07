@@ -44,12 +44,45 @@ class ApiClient {
 
     // Add interceptors for logging and error handling
     // NOTE: Log interceptor will NOT log API keys (they're in headers, not body)
+    // Custom interceptor to handle upload endpoints with minimal logging
+    _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) {
+        // Mark upload requests so we can filter them in logging
+        if (options.path.contains('/upload')) {
+          options.extra['skipBodyLogging'] = true;
+        }
+        handler.next(options);
+      },
+      onResponse: (response, handler) {
+        // For upload endpoints, log a simple success message
+        if (response.requestOptions.path.contains('/upload')) {
+          print('✓ API returned success in response to vCard upload request');
+        }
+        handler.next(response);
+      },
+    ));
+    
+    // Add standard log interceptor with custom logPrint to filter upload endpoints
     _dio.interceptors.add(LogInterceptor(
       requestBody: true,
       responseBody: true,
       error: true,
       // Don't log request headers to avoid exposing API keys
       requestHeader: false,
+      // Custom log function to skip verbose logging for upload endpoints
+      logPrint: (object) {
+        final message = object.toString();
+        // Skip request/response body logging for upload endpoints (contains entire vCard file)
+        final isUpload = message.contains('/upload') || 
+                        message.contains('/api/contacts/upload');
+        final isBodyLog = message.contains('Response Body:') || 
+                         message.contains('Request Body:');
+        
+        if (isUpload && isBodyLog) {
+          return; // Skip verbose body logging for uploads
+        }
+        print(object);
+      },
     ));
   }
 

@@ -396,7 +396,7 @@ Future<void> showPeopleSelector({
             child: GestureDetector(
               onTap: close,
               child: Container(
-                color: Colors.black.withOpacity(0.3),
+                color: Colors.black.withValues(alpha: 0.3),
               ),
             ),
           ),

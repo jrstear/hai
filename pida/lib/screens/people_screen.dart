@@ -293,8 +293,9 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
           ),
         );
 
-        // Refresh contacts list
+        // Refresh contacts list (both filtered and base provider)
         ref.invalidate(contactsFilteredProvider(_getFilter()));
+        ref.invalidate(contactsProvider);
       }
     } catch (e) {
       if (mounted) {
@@ -392,8 +393,9 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
           ),
         );
 
-        // Refresh contacts list
+        // Refresh contacts list (both filtered and base provider)
         ref.invalidate(contactsFilteredProvider(_getFilter()));
+        ref.invalidate(contactsProvider);
       }
     } catch (e) {
       if (mounted) {
