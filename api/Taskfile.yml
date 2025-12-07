@@ -172,7 +172,7 @@ tasks:
       - |
         echo "=========================================="
         echo "WARNING: This will DELETE ALL DATA in all indexes!"
-        echo "Indexes: contacts, speakers, recordings, segments, lifelogs, lifelog_blockquotes, speaker_embeddings"
+        echo "Indexes: contacts, speakers, recordings, segments, lifelogs, lifelog_blockquotes, speaker_embeddings, settings"
         echo "=========================================="
         echo ""
         read -p "Type 'yes' to continue: " confirm

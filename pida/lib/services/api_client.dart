@@ -308,6 +308,28 @@ class ApiClient {
       throw _handleError(e);
     }
   }
+
+  /// Get a setting value by key
+  Future<String> getSetting(String key) async {
+    try {
+      final response = await _dio.get('/api/settings/$key');
+      return response.data['value'] as String;
+    } on DioException catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  /// Set a setting value by key
+  Future<void> setSetting(String key, String value) async {
+    try {
+      await _dio.put(
+        '/api/settings/$key',
+        data: {'value': value},
+      );
+    } on DioException catch (e) {
+      throw _handleError(e);
+    }
+  }
 }
 
 /// Provider for API client

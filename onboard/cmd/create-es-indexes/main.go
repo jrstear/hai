@@ -51,17 +51,6 @@ func main() {
 	fmt.Println("  - speaker_embeddings (new)")
 	fmt.Println("  - lifelogs")
 	fmt.Println("  - lifelog_blockquotes")
+	fmt.Println("  - settings (flexible key-value storage)")
 	fmt.Println("\nAll indexes are ready for data.")
 }
-
-
-
-
-
-
-
-
-
-
-
-

@@ -50,6 +50,28 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
   }
 
   Future<void> _loadUserName() async {
+    try {
+      // Try loading from API first
+      final apiClient = ref.read(apiClientProvider);
+      final userName = await apiClient.getSetting('user_name');
+      if (userName.isNotEmpty && mounted) {
+        _userNameController.text = userName;
+        // Update config provider
+        ref.read(configProvider.notifier).state = ref.read(configProvider).copyWith(
+          userName: userName,
+        );
+        // Also save to SharedPreferences as fallback
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user_name', userName);
+        return;
+      }
+    } catch (e) {
+      // If API fails, fall back to SharedPreferences
+      // ignore: avoid_print
+      print('Failed to load user name from API, using local storage: $e');
+    }
+    
+    // Fallback to SharedPreferences
     final prefs = await SharedPreferences.getInstance();
     final userName = prefs.getString('user_name');
     if (userName != null && mounted) {
@@ -62,16 +84,35 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
   }
 
   Future<void> _saveUserName(String userName) async {
+    // Save to API
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      if (userName.isEmpty) {
+        // For empty string, we could delete the setting, but for now just set empty
+        await apiClient.setSetting('user_name', '');
+      } else {
+        await apiClient.setSetting('user_name', userName);
+      }
+    } catch (e) {
+      // Log error but continue to save locally
+      // ignore: avoid_print
+      print('Failed to save user name to API: $e');
+    }
+    
+    // Also save to SharedPreferences as fallback
     final prefs = await SharedPreferences.getInstance();
     if (userName.isEmpty) {
       await prefs.remove('user_name');
     } else {
       await prefs.setString('user_name', userName);
     }
+    
     // Update config provider
-    ref.read(configProvider.notifier).state = ref.read(configProvider).copyWith(
-      userName: userName.isEmpty ? null : userName,
-    );
+    if (mounted) {
+      ref.read(configProvider.notifier).state = ref.read(configProvider).copyWith(
+        userName: userName.isEmpty ? null : userName,
+      );
+    }
   }
 
   @override
@@ -193,7 +234,16 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
                       isDense: true,
                     ),
                     onChanged: (value) {
+                      // Update local state immediately for responsive UI
+                      setState(() {});
+                    },
+                    onSubmitted: (value) {
+                      // Save to API when user finishes entering (presses Enter or loses focus)
                       _saveUserName(value);
+                    },
+                    onEditingComplete: () {
+                      // Also save when editing completes (e.g., user taps outside)
+                      _saveUserName(_userNameController.text);
                     },
                   ),
                 ),

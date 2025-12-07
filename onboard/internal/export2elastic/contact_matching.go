@@ -23,7 +23,10 @@ func (e *Exporter) createESClient(esURL string) (*elasticsearch.Client, error) {
 	return client, nil
 }
 
-const indexContacts = "contacts"
+const (
+	indexContacts = "contacts"
+	indexSettings = "settings"
+)
 
 // Contact represents a contact for name matching
 type Contact struct {
@@ -32,14 +35,41 @@ type Contact struct {
 }
 
 // matchContactByName matches a speaker name to a contact by name
+// Also checks if speaker name matches the "You" name from settings
 // Returns contact ID if single match found, nil if no match or multiple matches
-func (e *Exporter) matchContactByName(ctx context.Context, speakerName string, contacts []Contact) *string {
+func (e *Exporter) matchContactByName(ctx context.Context, speakerName string, contacts []Contact, esClient *elasticsearch.Client) *string {
 	// Normalize speaker name
 	normalizedSpeaker := normalizeName(speakerName)
 
-	// Skip "You" and "Unknown" - they shouldn't auto-match
-	if normalizedSpeaker == "you" || normalizedSpeaker == "unknown" {
+	// Skip "Unknown" - it shouldn't auto-match
+	if normalizedSpeaker == "unknown" {
 		return nil
+	}
+
+	// Check if speaker name matches "You" name from settings
+	if esClient != nil {
+		userName, err := e.loadUserName(ctx, esClient)
+		if err == nil && userName != "" {
+			normalizedUserName := normalizeName(userName)
+			// If speaker name matches "You" name, find the contact with that name
+			if namesMatch(normalizedSpeaker, normalizedUserName) {
+				// Find contact that matches the user name
+				for _, contact := range contacts {
+					normalizedContact := normalizeName(contact.Name)
+					if namesMatch(normalizedContact, normalizedUserName) {
+						// Found the contact that matches "You" name
+						return &contact.ID
+					}
+				}
+			}
+		}
+	}
+
+	// Also handle "You" as a special case (even if no user_name in settings)
+	if normalizedSpeaker == "you" {
+		// Try to find a contact that might be the user
+		// This is a fallback if user_name setting isn't set
+		// We'll still try to match against contacts, but won't force it
 	}
 
 	// Find matching contacts
@@ -160,4 +190,69 @@ func namesMatch(name1, name2 string) bool {
 	}
 
 	return false
+}
+
+// loadUserName loads the user_name setting from the settings index
+// Returns empty string and no error if setting doesn't exist or index doesn't exist
+func (e *Exporter) loadUserName(ctx context.Context, esClient *elasticsearch.Client) (string, error) {
+	if esClient == nil {
+		return "", nil
+	}
+
+	// Query for user_name setting
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"term": map[string]interface{}{
+				"key": "user_name",
+			},
+		},
+		"size": 1,
+	}
+
+	queryJSON, err := json.Marshal(query)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal query: %w", err)
+	}
+
+	res, err := esClient.Search(
+		esClient.Search.WithIndex(indexSettings),
+		esClient.Search.WithBody(bytes.NewReader(queryJSON)),
+		esClient.Search.WithContext(ctx),
+	)
+	if err != nil {
+		// If index doesn't exist or query fails, return empty (not an error - settings may not be set yet)
+		return "", nil
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		if res.StatusCode == 404 {
+			// Settings index doesn't exist yet - that's ok
+			return "", nil
+		}
+		// Error querying settings - return empty (not an error - settings matching is optional)
+		_, _ = io.ReadAll(res.Body) // Drain response body
+		return "", nil
+	}
+
+	var result struct {
+		Hits struct {
+			Hits []struct {
+				Source struct {
+					Key   string `json:"key"`
+					Value string `json:"value"`
+				} `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode settings response: %w", err)
+	}
+
+	if len(result.Hits.Hits) == 0 {
+		return "", nil
+	}
+
+	return result.Hits.Hits[0].Source.Value, nil
 }

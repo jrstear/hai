@@ -156,8 +156,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         appBar: AppBar(
           title: const Text('Conversation'),
         ),
-        body: const ErrorDisplayWidget(
-          message: 'No conversation ID provided',
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              'Use the Calendar to select a conversation.',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ),
         ),
       );
     }

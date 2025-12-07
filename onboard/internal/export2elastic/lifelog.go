@@ -12,6 +12,7 @@ import (
 	"hai/onboard/internal/fetch"
 	"hai/storage"
 
+	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/google/uuid"
 )
 
@@ -75,8 +76,10 @@ func (e *Exporter) ExportLifelogs(ctx context.Context, lifelogFilePath string) (
 
 	// Load contacts for name matching (optional - contacts may not be loaded yet)
 	var contacts []Contact
+	var esClient *elasticsearch.Client
 	if e.esURL != "" {
-		esClient, err := e.createESClient(e.esURL)
+		var err error
+		esClient, err = e.createESClient(e.esURL)
 		if err == nil {
 			loadedContacts, err := e.loadContacts(ctx, esClient)
 			if err == nil {
@@ -163,9 +166,9 @@ func (e *Exporter) ExportLifelogs(ctx context.Context, lifelogFilePath string) (
 					blockquote.SpeakerID = content.SpeakerIdentifier
 				}
 
-				// Auto-associate with contact if speaker_name matches a contact name
-				if len(contacts) > 0 {
-					matchedContactID := e.matchContactByName(ctx, content.SpeakerName, contacts)
+				// Auto-associate with contact if speaker_name matches a contact name or "You" name
+				if len(contacts) > 0 || esClient != nil {
+					matchedContactID := e.matchContactByName(ctx, content.SpeakerName, contacts, esClient)
 					if matchedContactID != nil {
 						blockquote.ContactID = matchedContactID
 					}

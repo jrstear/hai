@@ -81,6 +81,12 @@ func main() {
 		r.Route("/limitless", func(r chi.Router) {
 			r.Get("/audio", srv.HandleLimitlessAudioProxy)
 		})
+
+		// Settings endpoints
+		r.Route("/settings", func(r chi.Router) {
+			r.Get("/{key}", srv.HandleGetSetting)
+			r.Put("/{key}", srv.HandleSetSetting)
+		})
 	})
 
 	// Start server

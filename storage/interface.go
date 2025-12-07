@@ -201,6 +201,17 @@ type Storage interface {
 	// Only non-zero fields are updated
 	// Returns ErrNotFound if segment doesn't exist
 	UpdateSegment(ctx context.Context, segment *Segment) error
+
+	// Settings operations
+
+	// GetSetting retrieves a setting value by key
+	// Returns ErrNotFound if setting doesn't exist
+	GetSetting(ctx context.Context, key string) (string, error)
+
+	// SetSetting creates or updates a setting value
+	// If the setting exists, it updates the value and updated_at timestamp
+	// If the setting doesn't exist, it creates a new one with created_at and updated_at
+	SetSetting(ctx context.Context, key, value string) error
 }
 
 // ValidateEmbedding checks if an embedding has the correct dimension and non-zero magnitude

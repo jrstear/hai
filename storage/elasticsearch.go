@@ -15,17 +15,18 @@ import (
 )
 
 const (
-	indexSpeakers          = "speakers"
-	indexRecordings        = "recordings"
-	indexSegments          = "segments"
-	indexLifelogs          = "lifelogs"
+	indexSpeakers           = "speakers"
+	indexRecordings         = "recordings"
+	indexSegments           = "segments"
+	indexLifelogs           = "lifelogs"
 	indexLifelogBlockquotes = "lifelog_blockquotes"
-	indexSpeakerEmbeddings = "speaker_embeddings"
+	indexSpeakerEmbeddings  = "speaker_embeddings"
+	indexSettings           = "settings"
 )
 
 // ElasticsearchStorage implements the Storage interface using Elasticsearch
 type ElasticsearchStorage struct {
-	client      *elasticsearch.Client
+	client           *elasticsearch.Client
 	segmentIDCounter int64 // Counter for generating segment IDs
 }
 
@@ -90,9 +91,9 @@ func (s *ElasticsearchStorage) ensureIndices(ctx context.Context) error {
 							"type": "keyword",
 						},
 						"embedding": map[string]interface{}{
-							"type":     "dense_vector",
-							"dims":     256,
-							"index":    true,
+							"type":       "dense_vector",
+							"dims":       256,
+							"index":      true,
 							"similarity": "cosine",
 						},
 						"first_seen": map[string]interface{}{
@@ -182,15 +183,15 @@ func (s *ElasticsearchStorage) ensureIndices(ctx context.Context) error {
 						"recording_id": map[string]interface{}{
 							"type": "keyword",
 						},
-					"local_speaker_id": map[string]interface{}{
-						"type": "keyword",
-					},
-					"blockquote_id": map[string]interface{}{
-						"type": "keyword",
-					},
-					"start_time": map[string]interface{}{
-						"type": "float",
-					},
+						"local_speaker_id": map[string]interface{}{
+							"type": "keyword",
+						},
+						"blockquote_id": map[string]interface{}{
+							"type": "keyword",
+						},
+						"start_time": map[string]interface{}{
+							"type": "float",
+						},
 						"end_time": map[string]interface{}{
 							"type": "float",
 						},
@@ -312,15 +313,45 @@ func (s *ElasticsearchStorage) ensureIndices(ctx context.Context) error {
 							"type": "keyword",
 						},
 						"embedding": map[string]interface{}{
-							"type":     "dense_vector",
-							"dims":     256,
-							"index":    true,
+							"type":       "dense_vector",
+							"dims":       256,
+							"index":      true,
 							"similarity": "cosine",
 						},
 						"duration_seconds": map[string]interface{}{
 							"type": "float",
 						},
 						"created_at": map[string]interface{}{
+							"type": "date",
+						},
+					},
+				},
+				"settings": map[string]interface{}{
+					"number_of_shards":   1,
+					"number_of_replicas": 0,
+				},
+			},
+		},
+		{
+			name: indexSettings,
+			mapping: map[string]interface{}{
+				"mappings": map[string]interface{}{
+					"properties": map[string]interface{}{
+						"key": map[string]interface{}{
+							"type": "keyword",
+						},
+						"value": map[string]interface{}{
+							"type": "text",
+							"fields": map[string]interface{}{
+								"keyword": map[string]interface{}{
+									"type": "keyword",
+								},
+							},
+						},
+						"created_at": map[string]interface{}{
+							"type": "date",
+						},
+						"updated_at": map[string]interface{}{
 							"type": "date",
 						},
 					},
@@ -454,9 +485,9 @@ func (s *ElasticsearchStorage) FindSimilarSpeakers(ctx context.Context, embeddin
 	// Instead, we fetch more candidates and filter by threshold in application code
 	query := map[string]interface{}{
 		"knn": map[string]interface{}{
-			"field":         "embedding",
-			"query_vector":  embedding64,
-			"k":             100, // Get more candidates, filter by threshold in code
+			"field":          "embedding",
+			"query_vector":   embedding64,
+			"k":              100, // Get more candidates, filter by threshold in code
 			"num_candidates": 100,
 		},
 	}
@@ -514,7 +545,7 @@ func (s *ElasticsearchStorage) FindSimilarSpeakers(ctx context.Context, embeddin
 		// However, Elasticsearch may return scores in a different range
 		// We'll use the score as-is and let the caller filter by threshold
 		similarity := hit.Score
-		
+
 		// Only filter by threshold if threshold > 0 (caller wants filtering)
 		// If threshold is 0, return all matches for caller to filter
 		if threshold <= 0 || similarity >= threshold {
@@ -1634,12 +1665,12 @@ func (s *ElasticsearchStorage) recordingToDoc(recording *Recording) map[string]i
 
 func (s *ElasticsearchStorage) segmentToDoc(segment *Segment) map[string]interface{} {
 	doc := map[string]interface{}{
-		"id":          strconv.FormatInt(segment.ID, 10),
+		"id":           strconv.FormatInt(segment.ID, 10),
 		"recording_id": segment.RecordingID,
-		"start_time":  segment.StartTime,
-		"end_time":    segment.EndTime,
-		"duration":    segment.Duration,
-		"created_at":  segment.CreatedAt.Format(time.RFC3339),
+		"start_time":   segment.StartTime,
+		"end_time":     segment.EndTime,
+		"duration":     segment.Duration,
+		"created_at":   segment.CreatedAt.Format(time.RFC3339),
 	}
 
 	// Optional fields
@@ -2323,3 +2354,103 @@ func (s *ElasticsearchStorage) searchSpeakerEmbeddings(ctx context.Context, quer
 	return embeddings, nil
 }
 
+// Settings operations
+
+// GetSetting retrieves a setting value by key
+func (s *ElasticsearchStorage) GetSetting(ctx context.Context, key string) (string, error) {
+	res, err := s.client.Get(indexSettings, key)
+	if err != nil {
+		return "", fmt.Errorf("failed to get setting: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		if res.StatusCode == 404 {
+			return "", ErrNotFound
+		}
+		body, _ := io.ReadAll(res.Body)
+		return "", fmt.Errorf("failed to get setting: %s", string(body))
+	}
+
+	var result struct {
+		Source struct {
+			Key       string    `json:"key"`
+			Value     string    `json:"value"`
+			CreatedAt time.Time `json:"created_at"`
+			UpdatedAt time.Time `json:"updated_at"`
+		} `json:"_source"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode setting: %w", err)
+	}
+
+	return result.Source.Value, nil
+}
+
+// SetSetting creates or updates a setting value
+func (s *ElasticsearchStorage) SetSetting(ctx context.Context, key, value string) error {
+	now := time.Now()
+
+	// Check if setting exists
+	_, err := s.GetSetting(ctx, key)
+	exists := err == nil
+
+	doc := map[string]interface{}{
+		"key":   key,
+		"value": value,
+	}
+
+	if exists {
+		// Update existing setting
+		// Get the created_at from existing document
+		res, err := s.client.Get(indexSettings, key)
+		if err != nil {
+			return fmt.Errorf("failed to get existing setting: %w", err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode == 200 {
+			var result struct {
+				Source struct {
+					CreatedAt time.Time `json:"created_at"`
+				} `json:"_source"`
+			}
+			if err := json.NewDecoder(res.Body).Decode(&result); err == nil {
+				doc["created_at"] = result.Source.CreatedAt
+			} else {
+				doc["created_at"] = now
+			}
+		} else {
+			doc["created_at"] = now
+		}
+		doc["updated_at"] = now
+	} else {
+		// Create new setting
+		doc["created_at"] = now
+		doc["updated_at"] = now
+	}
+
+	docJSON, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal setting: %w", err)
+	}
+
+	res, err := s.client.Index(
+		indexSettings,
+		bytes.NewReader(docJSON),
+		s.client.Index.WithDocumentID(key),
+		s.client.Index.WithContext(ctx),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set setting: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to set setting: %s", string(body))
+	}
+
+	return nil
+}

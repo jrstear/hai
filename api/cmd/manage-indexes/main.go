@@ -17,9 +17,9 @@ import (
 )
 
 var (
-	esURL     = flag.String("es", "", "Elasticsearch URL (default: ELASTICSEARCH_URL env var)")
-	index     = flag.String("index", "", "Index name to manage (contacts, or 'all' for all indexes)")
-	action    = flag.String("action", "rebuild", "Action: delete, create, or rebuild (default: rebuild)")
+	esURL  = flag.String("es", "", "Elasticsearch URL (default: ELASTICSEARCH_URL env var)")
+	index  = flag.String("index", "", "Index name to manage (contacts, or 'all' for all indexes)")
+	action = flag.String("action", "rebuild", "Action: delete, create, or rebuild (default: rebuild)")
 )
 
 func main() {
@@ -60,6 +60,7 @@ func main() {
 			"lifelogs",
 			"lifelog_blockquotes",
 			"speaker_embeddings",
+			"settings",
 		}
 	} else {
 		indexes = []string{*index}
@@ -130,7 +131,7 @@ func createIndex(ctx context.Context, client *elasticsearch.Client, indexName st
 	case "contacts":
 		contactsHandler := contacts.NewElasticsearchContacts(client)
 		return contactsHandler.EnsureIndex(ctx)
-	case "speakers", "recordings", "segments", "lifelogs", "lifelog_blockquotes", "speaker_embeddings":
+	case "speakers", "recordings", "segments", "lifelogs", "lifelog_blockquotes", "speaker_embeddings", "settings":
 		// Use storage package mapping definitions to create these indexes
 		return createStorageIndex(ctx, client, indexName)
 	default:
@@ -186,9 +187,9 @@ func getIndexMapping(indexName string) (map[string]interface{}, error) {
 				"properties": map[string]interface{}{
 					"id": map[string]interface{}{"type": "keyword"},
 					"embedding": map[string]interface{}{
-						"type":     "dense_vector",
-						"dims":     256,
-						"index":    true,
+						"type":       "dense_vector",
+						"dims":       256,
+						"index":      true,
 						"similarity": "cosine",
 					},
 					"first_seen": map[string]interface{}{"type": "date"},
@@ -228,18 +229,18 @@ func getIndexMapping(indexName string) (map[string]interface{}, error) {
 		return map[string]interface{}{
 			"mappings": map[string]interface{}{
 				"properties": map[string]interface{}{
-					"id":                  map[string]interface{}{"type": "keyword"},
+					"id":                   map[string]interface{}{"type": "keyword"},
 					"speaker_embedding_id": map[string]interface{}{"type": "keyword"},
-					"speaker_id":          map[string]interface{}{"type": "keyword"},
-					"recording_id":        map[string]interface{}{"type": "keyword"},
-					"local_speaker_id":    map[string]interface{}{"type": "keyword"},
-					"blockquote_id":       map[string]interface{}{"type": "keyword"},
-					"start_time":          map[string]interface{}{"type": "float"},
-					"end_time":            map[string]interface{}{"type": "float"},
-					"duration":            map[string]interface{}{"type": "float"},
-					"start_byte_offset":   map[string]interface{}{"type": "long"},
-					"end_byte_offset":     map[string]interface{}{"type": "long"},
-					"created_at":          map[string]interface{}{"type": "date"},
+					"speaker_id":           map[string]interface{}{"type": "keyword"},
+					"recording_id":         map[string]interface{}{"type": "keyword"},
+					"local_speaker_id":     map[string]interface{}{"type": "keyword"},
+					"blockquote_id":        map[string]interface{}{"type": "keyword"},
+					"start_time":           map[string]interface{}{"type": "float"},
+					"end_time":             map[string]interface{}{"type": "float"},
+					"duration":             map[string]interface{}{"type": "float"},
+					"start_byte_offset":    map[string]interface{}{"type": "long"},
+					"end_byte_offset":      map[string]interface{}{"type": "long"},
+					"created_at":           map[string]interface{}{"type": "date"},
 				},
 			},
 			"settings": baseSettings,
@@ -289,9 +290,9 @@ func getIndexMapping(indexName string) (map[string]interface{}, error) {
 					"recording_id":     map[string]interface{}{"type": "keyword"},
 					"local_speaker_id": map[string]interface{}{"type": "keyword"},
 					"embedding": map[string]interface{}{
-						"type":     "dense_vector",
-						"dims":     256,
-						"index":    true,
+						"type":       "dense_vector",
+						"dims":       256,
+						"index":      true,
 						"similarity": "cosine",
 					},
 					"duration_seconds": map[string]interface{}{"type": "float"},
@@ -301,8 +302,27 @@ func getIndexMapping(indexName string) (map[string]interface{}, error) {
 			"settings": baseSettings,
 		}, nil
 
+	case "settings":
+		return map[string]interface{}{
+			"mappings": map[string]interface{}{
+				"properties": map[string]interface{}{
+					"key": map[string]interface{}{"type": "keyword"},
+					"value": map[string]interface{}{
+						"type": "text",
+						"fields": map[string]interface{}{
+							"keyword": map[string]interface{}{
+								"type": "keyword",
+							},
+						},
+					},
+					"created_at": map[string]interface{}{"type": "date"},
+					"updated_at": map[string]interface{}{"type": "date"},
+				},
+			},
+			"settings": baseSettings,
+		}, nil
+
 	default:
 		return nil, fmt.Errorf("unknown index: %s", indexName)
 	}
 }
-
