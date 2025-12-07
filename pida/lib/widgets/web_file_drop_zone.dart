@@ -204,7 +204,7 @@ class _WebFileDropZoneState extends State<WebFileDropZone> {
         cursor: SystemMouseCursors.click,
         child: Container(
           key: _key,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             border: Border.all(
               color: widget.isDragging
@@ -222,17 +222,18 @@ class _WebFileDropZoneState extends State<WebFileDropZone> {
             children: [
               Icon(
                 Icons.upload_file,
-                size: 20,
+                size: 18,
                 color: widget.isDragging
                     ? Theme.of(context).colorScheme.primary
                     : Theme.of(context).colorScheme.onSurface,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Text(
                 widget.isUploading
                     ? 'Uploading...'
                     : 'Drop vCard or click',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 14,
                       color: widget.isDragging
                           ? Theme.of(context).colorScheme.primary
                           : Theme.of(context).colorScheme.onSurface,

@@ -201,10 +201,8 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          // vCard drop/select area - don't expand, let it size itself
-          Flexible(
-            child: _buildVCardDropZone(),
-          ),
+          // vCard drop/select area - right-justified
+          _buildVCardDropZone(),
         ],
       ),
     );
