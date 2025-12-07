@@ -442,6 +442,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             }
                           }
                           
+                          // Check if there are Unknown participants
+                          final hasUnknown = summary.participantNames.any((name) =>
+                              _normalizeName(name) == 'unknown');
+                          
                           // Add speaker avatars for non-associated speakers (fallback)
                           if (avatarWidgets.length < 3 && summary.participantNames.isNotEmpty) {
                             final remainingSlots = 3 - avatarWidgets.length;
@@ -466,13 +470,27 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             }
                           }
                           
+                          // Add "?" icon for Unknown participants (consistent with conversation page)
+                          if (hasUnknown) {
+                            avatarWidgets.add(
+                              Container(
+                                margin: const EdgeInsets.only(right: 4),
+                                child: SpeakerAvatar(
+                                  speakerName: 'Unknown',
+                                  size: 32,
+                                ),
+                              ),
+                            );
+                          }
+                          
                           final totalParticipants = 
                               (summary.hasUser ? 1 : 0) + 
                               contactIdsToUse.length + 
                               summary.participantNames.where((n) {
                                 final normalized = _normalizeName(n);
                                 return normalized != 'you' && normalized != 'unknown';
-                              }).length;
+                              }).length +
+                              (hasUnknown ? 1 : 0);
                           
                           return Row(
                             children: [

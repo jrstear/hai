@@ -1,7 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:pida/models/api_error.dart';
 import 'package:pida/models/contact.dart';
 import 'package:pida/models/lifelog.dart';
 import 'package:pida/models/recording.dart';
@@ -219,6 +217,60 @@ class ApiClient {
       final data = response.data as Map<String, dynamic>;
       final participants = data['participants'] as List<dynamic>;
       return participants.map((id) => id as String).toList();
+    } on DioException catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  // Upload vCard file
+  Future<Map<String, dynamic>> uploadVCard(String filePath) async {
+    try {
+      final formData = FormData.fromMap({
+        'vcf': await MultipartFile.fromFile(filePath, filename: filePath.split('/').last),
+      });
+      
+      // Remove Content-Type header to let Dio set it for multipart/form-data
+      final options = Options(
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      );
+      
+      final response = await _dio.post(
+        '/api/contacts/upload',
+        data: formData,
+        options: options,
+      );
+      
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  // Upload vCard file from bytes (for web drag and drop)
+  Future<Map<String, dynamic>> uploadVCardFromBytes(List<int> bytes, String filename) async {
+    try {
+      final formData = FormData.fromMap({
+        'vcf': MultipartFile.fromBytes(
+          bytes,
+          filename: filename,
+        ),
+      });
+      
+      final options = Options(
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      );
+      
+      final response = await _dio.post(
+        '/api/contacts/upload',
+        data: formData,
+        options: options,
+      );
+      
+      return response.data as Map<String, dynamic>;
     } on DioException catch (e) {
       throw _handleError(e);
     }

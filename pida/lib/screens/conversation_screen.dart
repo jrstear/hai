@@ -383,34 +383,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                           orElse: () => Contact(id: associatedContactId, name: 'Unknown'),
                         );
                         
-                        // Check if contact name matches speaker name (for highlighting)
-                        final nameMatches = _namesMatch(
-                          _normalizeName(blockquote.speakerName),
-                          _normalizeName(contact.name),
-                        );
-                        
-                        // Add green border/background if name matches
-                        if (nameMatches) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.green.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(
-                                color: Colors.green,
-                                width: 1,
-                              ),
-                            ),
-                            child: Text(
-                              contact.name,
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.green.shade700,
-                                  ),
-                            ),
-                          );
-                        }
-                        
+                        // Name is not highlighted - only the icon is highlighted when names match
                         return Text(
                           contact.name,
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(

@@ -24,10 +24,12 @@ class AppConfig {
   AppConfig copyWith({
     String? apiBaseUrl,
     bool? isDevelopment,
+    String? userName,
   }) {
     return AppConfig(
       apiBaseUrl: apiBaseUrl ?? this.apiBaseUrl,
       isDevelopment: isDevelopment ?? this.isDevelopment,
+      userName: userName ?? this.userName,
     );
   }
 }

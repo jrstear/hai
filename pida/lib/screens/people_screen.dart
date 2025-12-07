@@ -1,13 +1,19 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pida/models/contact.dart';
 import 'package:pida/providers/contacts_provider.dart';
+import 'package:pida/providers/config_provider.dart';
 import 'package:pida/routes/app_router.dart';
+import 'package:pida/services/api_client.dart';
 import 'package:pida/widgets/contact_avatar.dart';
 import 'package:pida/widgets/error_widget.dart' as error_widget;
 import 'package:pida/widgets/loading_widget.dart';
+import 'package:pida/utils/web_file_helper.dart' if (dart.library.io) 'package:pida/utils/web_file_helper_stub.dart';
 
 /// People screen (Contacts page)
 /// 
@@ -27,16 +33,44 @@ class PeopleScreen extends ConsumerStatefulWidget {
 
 class _PeopleScreenState extends ConsumerState<PeopleScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _userNameController = TextEditingController();
   String _searchQuery = '';
   String _debouncedSearchQuery = '';
-  bool? _knownFilter;
   ContactsFilter? _cachedFilter;
   Timer? _debounceTimer;
+  bool _isUploading = false;
+  bool _isDragging = false;
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
+    _loadUserName();
+  }
+
+  Future<void> _loadUserName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userName = prefs.getString('user_name');
+    if (userName != null && mounted) {
+      _userNameController.text = userName;
+      // Update config provider
+      ref.read(configProvider.notifier).state = ref.read(configProvider).copyWith(
+        userName: userName,
+      );
+    }
+  }
+
+  Future<void> _saveUserName(String userName) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (userName.isEmpty) {
+      await prefs.remove('user_name');
+    } else {
+      await prefs.setString('user_name', userName);
+    }
+    // Update config provider
+    ref.read(configProvider.notifier).state = ref.read(configProvider).copyWith(
+      userName: userName.isEmpty ? null : userName,
+    );
   }
 
   @override
@@ -44,6 +78,7 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
     _debounceTimer?.cancel();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _userNameController.dispose();
     super.dispose();
   }
 
@@ -75,10 +110,9 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
     
     // Only create new filter if values actually changed
     if (_cachedFilter == null ||
-        _cachedFilter!.known != _knownFilter ||
         _cachedFilter!.search != searchValue) {
       _cachedFilter = ContactsFilter(
-        known: _knownFilter,
+        known: null, // No filter by known status
         search: searchValue,
       );
     }
@@ -96,8 +130,13 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
       appBar: AppBar(
         title: const Text('People'),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(60),
-          child: _buildSearchBar(),
+          preferredSize: const Size.fromHeight(120),
+          child: Column(
+            children: [
+              _buildUserAndVCardRow(),
+              _buildSearchBar(),
+            ],
+          ),
         ),
       ),
       body: contactsAsync.when(
@@ -126,77 +165,351 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
     );
   }
 
+  Widget _buildUserAndVCardRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // "You" are: text field
+          Expanded(
+            child: Row(
+              children: [
+                const Text('"You" are:'),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _userNameController,
+                    decoration: InputDecoration(
+                      hintText: 'Your name',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      isDense: true,
+                    ),
+                    onChanged: (value) {
+                      _saveUserName(value);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // vCard drop/select area - don't expand, let it size itself
+          Flexible(
+            child: _buildVCardDropZone(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVCardDropZone() {
+    if (kIsWeb) {
+      return _buildWebDropZone();
+    } else {
+      return _buildMobileDropZone();
+    }
+  }
+
+  Widget _buildWebDropZone() {
+    return Listener(
+      onPointerDown: (event) {
+        // Handle click to select file
+        _selectVCardFile();
+      },
+      child: DragTarget<Object>(
+        onWillAcceptWithDetails: (details) {
+          if (kIsWeb) {
+            try {
+              // On web, data should be html.File
+              final file = details.data as dynamic;
+              final fileName = (file.name as String?)?.toLowerCase() ?? '';
+              if (fileName.endsWith('.vcf') || fileName.endsWith('.vcard')) {
+                setState(() {
+                  _isDragging = true;
+                });
+                return true;
+              }
+            } catch (e) {
+              // Ignore type errors
+            }
+          }
+          return false;
+        },
+        onLeave: (data) {
+          setState(() {
+            _isDragging = false;
+          });
+        },
+        onAcceptWithDetails: (details) async {
+          setState(() {
+            _isDragging = false;
+          });
+          if (kIsWeb) {
+            await _handleWebFile(details.data);
+          }
+        },
+        builder: (context, candidateData, rejectedData) {
+          return MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: _isDragging
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).dividerColor,
+                  width: _isDragging ? 2 : 1,
+                ),
+                borderRadius: BorderRadius.circular(8),
+                color: _isDragging
+                    ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+                    : Theme.of(context).colorScheme.surfaceContainerHighest,
+              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.upload_file,
+                  size: 20,
+                  color: _isDragging
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurface,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _isUploading
+                      ? 'Uploading...'
+                      : 'Drop vCard or click',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: _isDragging
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurface,
+                      ),
+                ),
+              ],
+            ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMobileDropZone() {
+    return GestureDetector(
+      onTap: _selectVCardFile,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: Theme.of(context).dividerColor,
+            width: 1,
+          ),
+          borderRadius: BorderRadius.circular(8),
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.upload_file,
+              size: 20,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              _isUploading ? 'Uploading...' : 'Select vCard',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleWebFile(dynamic file) async {
+    if (!kIsWeb) return;
+    
+    setState(() {
+      _isUploading = true;
+    });
+
+    try {
+      // On web, read file using web helper
+      final bytes = await readWebFileAsBytes(file);
+      final fileName = getWebFileName(file);
+      final apiClient = ref.read(apiClientProvider);
+      final result = await apiClient.uploadVCardFromBytes(bytes, fileName);
+
+      final imported = result['imported'] as int? ?? 0;
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✓ Imported $imported contact(s)'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+
+        // Refresh contacts list
+        ref.invalidate(contactsFilteredProvider(_getFilter()));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error uploading vCard: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _selectVCardFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['vcf', 'vcard'],
+        withData: kIsWeb, // On web, we need bytes, not path
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        final file = result.files.single;
+        // On web, check for bytes; on other platforms, check for path
+        if (kIsWeb) {
+          if (file.bytes != null) {
+            await _uploadVCardFile(file);
+          } else {
+            throw Exception('File bytes not available');
+          }
+        } else {
+          // On non-web, path should be available
+          if (file.path != null) {
+            await _uploadVCardFile(file);
+          } else {
+            throw Exception('File path not available');
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error selecting file: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _uploadVCardFile(PlatformFile file) async {
+    setState(() {
+      _isUploading = true;
+    });
+
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      Map<String, dynamic> result;
+
+      if (kIsWeb) {
+        // Web: must use bytes, path is not available
+        if (file.bytes == null) {
+          throw Exception('File bytes not available on web');
+        }
+        result = await apiClient.uploadVCardFromBytes(
+          file.bytes!,
+          file.name,
+        );
+      } else {
+        // Mobile/Desktop: use file path
+        // Only access path on non-web platforms to avoid exceptions
+        if (file.path == null) {
+          throw Exception('File path not available');
+        }
+        result = await apiClient.uploadVCard(file.path!);
+      }
+
+      final imported = result['imported'] as int? ?? 0;
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✓ Imported $imported contact(s)'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+
+        // Refresh contacts list
+        ref.invalidate(contactsFilteredProvider(_getFilter()));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error uploading vCard: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+        });
+      }
+    }
+  }
+
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.all(8.0),
-      child: Column(
-        children: [
-          TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Search contacts...',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() {
-                          _searchQuery = '';
-                          _debouncedSearchQuery = '';
-                          _cachedFilter = null; // Reset cache
-                        });
-                      },
-                    )
-                  : null,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
-            ),
-            // Search is handled by controller listener with debouncing
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Search contacts...',
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _searchQuery = '';
+                      _debouncedSearchQuery = '';
+                      _cachedFilter = null; // Reset cache
+                    });
+                  },
+                )
+              : null,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              FilterChip(
-                label: const Text('All'),
-                selected: _knownFilter == null,
-                onSelected: (selected) {
-                  setState(() {
-                    _knownFilter = null;
-                    _cachedFilter = null; // Reset cache when filter changes
-                  });
-                },
-              ),
-              const SizedBox(width: 8),
-              FilterChip(
-                label: const Text('Known'),
-                selected: _knownFilter == true,
-                onSelected: (selected) {
-                  setState(() {
-                    _knownFilter = selected ? true : null;
-                    _cachedFilter = null; // Reset cache when filter changes
-                  });
-                },
-              ),
-              const SizedBox(width: 8),
-              FilterChip(
-                label: const Text('Unknown'),
-                selected: _knownFilter == false,
-                onSelected: (selected) {
-                  setState(() {
-                    _knownFilter = selected ? false : null;
-                    _cachedFilter = null; // Reset cache when filter changes
-                  });
-                },
-              ),
-            ],
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
           ),
-        ],
+        ),
+        // Search is handled by controller listener with debouncing
       ),
     );
   }
@@ -303,15 +616,25 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
   }
 
   Widget _buildSectionHeader(String letter) {
-    return Container(
+    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Colors.grey[200],
-      child: Text(
-        letter,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[700],
+      child: Row(
+        children: [
+          Text(
+            letter,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Container(
+              height: 1,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
+          ),
+        ],
       ),
     );
   }
