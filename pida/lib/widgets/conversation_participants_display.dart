@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pida/models/contact.dart';
 import 'package:pida/providers/contacts_provider.dart';
 import 'package:pida/providers/config_provider.dart';
-import 'package:pida/providers/filter_provider.dart';
 import 'package:pida/widgets/contact_avatar.dart';
+import 'package:pida/widgets/speaker_avatar.dart';
 
 /// Conversation participants display widget
 /// 
@@ -27,6 +27,9 @@ class ConversationParticipantsDisplay extends ConsumerWidget {
   /// Whether "You" (the app user) is a participant
   final bool hasUser;
   
+  /// Whether "Unknown" speakers are present in the conversation
+  final bool hasUnknown;
+  
   /// Optional callback when + button is tapped
   final VoidCallback? onAddTap;
 
@@ -35,6 +38,7 @@ class ConversationParticipantsDisplay extends ConsumerWidget {
     required this.lifelogId,
     required this.participantContactIds,
     this.hasUser = false,
+    this.hasUnknown = false,
     this.onAddTap,
   });
 
@@ -100,11 +104,21 @@ class ConversationParticipantsDisplay extends ConsumerWidget {
                 );
               }),
               
-              // Add "You" avatar if user is a participant (always show last before + button)
+              // Add "You" avatar if user is a participant
               if (hasUser)
                 Container(
                   margin: const EdgeInsets.only(right: 4),
                   child: _buildYouAvatar(context, userName),
+                ),
+              
+              // Add "?" icon for Unknown participants (consistent with calendar page)
+              if (hasUnknown)
+                Container(
+                  margin: const EdgeInsets.only(right: 4),
+                  child: const SpeakerAvatar(
+                    speakerName: 'Unknown',
+                    size: 32,
+                  ),
                 ),
               
               // Add button (always at far right)

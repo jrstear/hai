@@ -149,11 +149,20 @@ func (e *Exporter) ExportLifelogs(ctx context.Context, lifelogFilePath string) (
 				// Generate blockquote ID
 				blockquoteID := fmt.Sprintf("bq_%s", uuid.New().String()[:8])
 
+				// Replace "You" with actual user name from settings if available
+				speakerName := content.SpeakerName
+				if strings.ToLower(strings.TrimSpace(speakerName)) == "you" && esClient != nil {
+					userName, err := e.loadUserName(ctx, esClient)
+					if err == nil && userName != "" {
+						speakerName = userName
+					}
+				}
+
 				blockquote := &storage.LifelogBlockquote{
 					ID:            blockquoteID,
 					LifelogID:     ll.ID,
 					Content:       content.Content,
-					SpeakerName:   content.SpeakerName,
+					SpeakerName:   speakerName,
 					StartOffsetMs: content.StartOffsetMs,
 					EndOffsetMs:   content.EndOffsetMs,
 					StartTime:     startTime.UTC(),
@@ -166,9 +175,10 @@ func (e *Exporter) ExportLifelogs(ctx context.Context, lifelogFilePath string) (
 					blockquote.SpeakerID = content.SpeakerIdentifier
 				}
 
-				// Auto-associate with contact if speaker_name matches a contact name or "You" name
-				if len(contacts) > 0 || esClient != nil {
-					matchedContactID := e.matchContactByName(ctx, content.SpeakerName, contacts, esClient)
+				// Auto-associate with contact if speaker_name matches a contact name
+				// Note: speakerName has already been replaced with user_name if it was "You"
+				if len(contacts) > 0 {
+					matchedContactID := e.matchContactByName(ctx, speakerName, contacts, nil)
 					if matchedContactID != nil {
 						blockquote.ContactID = matchedContactID
 					}

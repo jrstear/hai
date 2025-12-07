@@ -53,14 +53,22 @@ func (e *Exporter) matchContactByName(ctx context.Context, speakerName string, c
 			normalizedUserName := normalizeName(userName)
 			// If speaker name is "You" OR matches the user_name, find the contact with that name
 			if normalizedSpeaker == "you" || namesMatch(normalizedSpeaker, normalizedUserName) {
-				// Find contact that matches the user name
+				// Find ALL contacts that match the user name
+				var userMatches []Contact
 				for _, contact := range contacts {
 					normalizedContact := normalizeName(contact.Name)
 					if namesMatch(normalizedContact, normalizedUserName) {
-						// Found the contact that matches "You" name
-						return &contact.ID
+						userMatches = append(userMatches, contact)
 					}
 				}
+				// If we found matches, return the first one
+				// If no matches, return nil (don't fall through to regular matching)
+				// This prevents "You" from incorrectly matching contacts like "Philip Young"
+				if len(userMatches) > 0 {
+					return &userMatches[0].ID
+				}
+				// No match found for user_name - return nil instead of falling through
+				return nil
 			}
 		}
 	}

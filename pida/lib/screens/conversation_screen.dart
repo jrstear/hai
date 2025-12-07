@@ -208,6 +208,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           // Check if "You" is a participant
           final hasUser = participantNames.any((name) => 
               name.toLowerCase().trim() == 'you');
+          
+          // Check if "Unknown" is a participant
+          final hasUnknown = participantNames.any((name) => 
+              name.toLowerCase().trim() == 'unknown');
 
           // Initialize conversation participants from blockquotes (match speaker names to contacts)
           return contactsAsync.when(
@@ -227,6 +231,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 sortedBlockquotes,
                 participantNames,
                 hasUser,
+                hasUnknown,
                 timing,
               );
             },
@@ -239,6 +244,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               sortedBlockquotes,
               participantNames,
               hasUser,
+              hasUnknown,
               timing,
             ),
           );
@@ -260,6 +266,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     List<Blockquote> blockquotes,
     List<String> participantNames,
     bool hasUser,
+    bool hasUnknown,
     ConversationTiming? timing,
   ) {
     final participantContactIds = ref.watch(conversationParticipantsProvider(lifelogId));
@@ -274,6 +281,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             lifelogId: lifelogId,
             participantContactIds: participantContactIds,
             hasUser: hasUser,
+            hasUnknown: hasUnknown,
             onAddTap: () => _openPeopleSelector(context, ref, lifelogId),
           ),
           showBorder: true,
@@ -428,7 +436,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                     blockquote.startTime, blockquote.startOffsetMs),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color:
-                          Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
