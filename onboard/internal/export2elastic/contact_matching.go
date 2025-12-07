@@ -46,13 +46,13 @@ func (e *Exporter) matchContactByName(ctx context.Context, speakerName string, c
 		return nil
 	}
 
-	// Check if speaker name matches "You" name from settings
+	// Check if speaker name is "You" or matches "You" name from settings
 	if esClient != nil {
 		userName, err := e.loadUserName(ctx, esClient)
 		if err == nil && userName != "" {
 			normalizedUserName := normalizeName(userName)
-			// If speaker name matches "You" name, find the contact with that name
-			if namesMatch(normalizedSpeaker, normalizedUserName) {
+			// If speaker name is "You" OR matches the user_name, find the contact with that name
+			if normalizedSpeaker == "you" || namesMatch(normalizedSpeaker, normalizedUserName) {
 				// Find contact that matches the user name
 				for _, contact := range contacts {
 					normalizedContact := normalizeName(contact.Name)
@@ -63,13 +63,6 @@ func (e *Exporter) matchContactByName(ctx context.Context, speakerName string, c
 				}
 			}
 		}
-	}
-
-	// Also handle "You" as a special case (even if no user_name in settings)
-	if normalizedSpeaker == "you" {
-		// Try to find a contact that might be the user
-		// This is a fallback if user_name setting isn't set
-		// We'll still try to match against contacts, but won't force it
 	}
 
 	// Find matching contacts
