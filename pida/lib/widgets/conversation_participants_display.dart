@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pida/models/contact.dart';
-import 'package:pida/widgets/contact_avatar.dart';
-import 'package:pida/widgets/speaker_avatar.dart';
+import 'package:pida/widgets/participant_avatar_helper.dart';
 
 /// Conversation participants display widget
 /// 
@@ -44,90 +43,13 @@ class ConversationParticipantsDisplay extends ConsumerWidget {
     // Limit to 3 avatars (current limit)
     final participantsToShow = orderedParticipants.take(3).toList();
     
+    // Build avatars using shared helper function
     for (final participant in participantsToShow) {
-      final speakerName = participant.speakerName;
-      final contactId = participant.contactId;
-      
-      // Special case: "Unknown" speakers show "?" icon
-      if (speakerName.trim().toLowerCase() == 'unknown') {
-        avatarWidgets.add(
-          Container(
-            margin: const EdgeInsets.only(right: 4),
-            child: const SpeakerAvatar(
-              speakerName: 'Unknown',
-              size: 32,
-            ),
-          ),
-        );
-        continue;
-      }
-      
-      // If contact_id exists, try to find the contact
-      Contact? contact;
-      if (contactId != null && contactId.isNotEmpty) {
-        try {
-          contact = contacts.firstWhere((c) => c.id == contactId);
-        } catch (e) {
-          // Contact not found, will fall back to speaker name initials
-          contact = null;
-        }
-      }
-      
-      Widget avatar;
-      bool showSpecialBorder = false;
-      
-      if (contact != null) {
-        // Contact found - show contact avatar (picture if available, else initials)
-        avatar = ContactAvatar(
-          name: contact.name,
-          pictureUrl: contact.pictureUrl,
-          favoriteColor: contact.favoriteColor,
-          size: 32,
-        );
-        
-        // Show green border if both contact.name and speaker_name are non-null
-        // This indicates auto-matched from Limitless/lifelog onboarding
-        if (contact.name.isNotEmpty && speakerName.isNotEmpty) {
-          showSpecialBorder = true;
-        }
-      } else {
-        // No contact_id or contact not found - show speaker name initials
-        avatar = SpeakerAvatar(
-          speakerName: speakerName,
-          size: 32,
-        );
-      }
-      
-      // Wrap with border if needed
-      Widget avatarWidget = avatar;
-      if (showSpecialBorder) {
-        avatarWidget = Container(
-          padding: const EdgeInsets.all(2), // Border width
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: Colors.green,
-              width: 2,
-            ),
-          ),
-          child: avatar,
-        );
-      } else {
-        avatarWidget = Container(
-          margin: const EdgeInsets.only(right: 4),
-          child: avatar,
-        );
-      }
-      
-      // Add margin if we added border (border container doesn't have margin)
-      if (showSpecialBorder) {
-        avatarWidget = Container(
-          margin: const EdgeInsets.only(right: 4),
-          child: avatarWidget,
-        );
-      }
-      
-      avatarWidgets.add(avatarWidget);
+      avatarWidgets.add(buildParticipantAvatar(
+        participant: participant,
+        contacts: contacts,
+        size: 32,
+      ));
     }
     
     // Build avatar row (right-aligned, participants in order left-to-right)

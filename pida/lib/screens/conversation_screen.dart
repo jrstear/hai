@@ -10,6 +10,7 @@ import 'package:pida/services/audio_service.dart';
 import 'package:pida/services/api_client.dart';
 import 'package:pida/widgets/contact_avatar.dart';
 import 'package:pida/widgets/conversation_participants_display.dart';
+import 'package:pida/widgets/participant_avatar_helper.dart';
 import 'package:pida/widgets/error_widget.dart';
 import 'package:pida/widgets/filter_bar.dart';
 import 'package:pida/widgets/loading_widget.dart';

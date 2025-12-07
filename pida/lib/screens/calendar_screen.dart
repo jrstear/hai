@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:pida/models/contact.dart';
+import 'package:pida/models/lifelog.dart';
 import 'package:pida/providers/contacts_provider.dart';
 import 'package:pida/providers/filter_provider.dart';
 import 'package:pida/providers/lifelog_provider.dart';
@@ -13,6 +14,7 @@ import 'package:pida/widgets/filter_bar.dart';
 import 'package:pida/widgets/loading_widget.dart';
 import 'package:pida/widgets/people_filter_display.dart';
 import 'package:pida/widgets/contact_avatar.dart';
+import 'package:pida/widgets/participant_avatar_helper.dart';
 import 'package:pida/widgets/people_selector.dart';
 import 'package:pida/widgets/speaker_avatar.dart';
 import 'package:pida/widgets/time_filter.dart';
@@ -212,35 +214,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  /// Build contact avatar with optional highlighting border when name matches speaker name
-  Widget _buildContactAvatarWithHighlight({
-    required Contact contact,
-    required bool highlight,
-    required double size,
-  }) {
-    final avatar = ContactAvatar(
-      name: contact.name,
-      pictureUrl: contact.pictureUrl,
-      favoriteColor: contact.favoriteColor,
-      size: size,
-    );
-    
-    if (highlight) {
-      return Container(
-        padding: const EdgeInsets.all(2), // Border width
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: Colors.green, // Or use theme color - could be configurable
-            width: 2,
-          ),
-        ),
-        child: avatar,
-      );
-    }
-    
-    return avatar;
-  }
 
   // Format time to 12-hour AM/PM format in local timezone
   String _formatTimeTo12Hour(String timeStr, int timestampMs) {
@@ -323,7 +296,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   _scrollToBottom();
                 });
 
-                return _buildConversationsList(context, filteredSummaries);
+                return _buildConversationsList(context, filteredSummaries, response.grouped);
               },
               loading: () =>
                   const LoadingWidget(message: 'Loading conversations...'),
@@ -340,7 +313,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
 
   Widget _buildConversationsList(
-      BuildContext context, List<ConversationSummary> summaries) {
+      BuildContext context, List<ConversationSummary> summaries, Map<String, List<Blockquote>> groupedBlockquotes) {
     return ListView.builder(
       controller: _scrollController,
       reverse: false, // Chronological order (earliest first)
@@ -348,13 +321,17 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       itemCount: summaries.length,
       itemBuilder: (context, index) {
         final summary = summaries[index];
-        return _buildConversationRow(context, summary);
+        // Build ordered tuples for this conversation to determine highlighting
+        final blockquotes = groupedBlockquotes[summary.lifelogId] ?? [];
+        final orderedTuples = buildOrderedParticipantTuples(blockquotes);
+        return _buildConversationRow(context, summary, orderedTuples);
       },
     );
   }
 
+
   Widget _buildConversationRow(
-      BuildContext context, ConversationSummary summary) {
+      BuildContext context, ConversationSummary summary, List<({String speakerName, String? contactId})> orderedTuples) {
     return InkWell(
       onTap: () async {
         // Navigate to Conversation screen with lifelog_id and date
@@ -466,20 +443,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                 .toList();
                             
                             for (final contact in participantContacts) {
-                              // Check if contact name matches any speaker name (for highlighting)
-                              final nameMatches = summary.participantNames.any((speakerName) =>
-                                  _namesMatch(_normalizeName(speakerName), _normalizeName(contact.name)));
-                              
-                              avatarWidgets.add(
-                                Container(
-                                  margin: const EdgeInsets.only(right: 4),
-                                  child: _buildContactAvatarWithHighlight(
-                                    contact: contact,
-                                    highlight: nameMatches,
-                                    size: 32,
-                                  ),
-                                ),
+                              // Find the tuple for this contact_id
+                              final tuple = orderedTuples.firstWhere(
+                                (t) => t.contactId == contact.id,
+                                orElse: () => (speakerName: '', contactId: null),
                               );
+                              
+                              // Use shared helper to build avatar with consistent highlighting logic
+                              avatarWidgets.add(buildParticipantAvatar(
+                                participant: tuple,
+                                contacts: contactListResponse.contacts,
+                                size: 32,
+                              ));
                             }
                           }
                           
