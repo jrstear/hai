@@ -14,7 +14,7 @@ import 'package:pida/widgets/speaker_avatar.dart';
 /// - Speaker name initials (if no contact_id)
 /// - Special green border for auto-matched contacts (both contact.name and speaker_name non-null)
 /// - "?" icon for "Unknown" speakers
-/// - Right-justified, expands leftward
+/// - Right-justified, participants ordered left-to-right
 /// - + button at far right to add people
 class ConversationParticipantsDisplay extends ConsumerWidget {
   /// Lifelog ID for this conversation
@@ -130,15 +130,15 @@ class ConversationParticipantsDisplay extends ConsumerWidget {
       avatarWidgets.add(avatarWidget);
     }
     
-    // Build avatar row (right-aligned, expanding leftward)
+    // Build avatar row (right-aligned, participants in order left-to-right)
     return Align(
       alignment: Alignment.centerRight,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          // Participant avatars (right to left)
-          ...avatarWidgets.reversed,
+          // Participant avatars (left to right, in order of appearance)
+          ...avatarWidgets,
           
           // Add button (always at far right)
           IconButton(
