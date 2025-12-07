@@ -4,8 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-
-	"hai/api/internal/contacts"
+	"os"
 )
 
 // HandleUploadVCards handles POST /api/contacts/upload
@@ -45,14 +44,24 @@ func (s *APIServer) HandleUploadVCards(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Append to default vCard file
-	if err := contacts.AppendVCards(contacts.VCardFilePath, vcardData); err != nil {
-		writeError(w, http.StatusInternalServerError, &ErrBadRequest{Message: "failed to save vCard file: " + err.Error()})
+	// Create a temporary file to import from (don't append to default file)
+	tmpFile, err := os.CreateTemp("", "vcard-upload-*.vcf")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, &ErrBadRequest{Message: "failed to create temp file: " + err.Error()})
 		return
 	}
+	defer os.Remove(tmpFile.Name()) // Clean up temp file
+	defer tmpFile.Close()
 
-	// Import contacts from the file
-	imported, err := s.contacts.ImportVCardsFromDefault(r.Context())
+	// Write uploaded data to temp file
+	if _, err := tmpFile.Write(vcardData); err != nil {
+		writeError(w, http.StatusInternalServerError, &ErrBadRequest{Message: "failed to write temp file: " + err.Error()})
+		return
+	}
+	tmpFile.Close() // Close before importing
+
+	// Import contacts directly from the uploaded file (not from default cumulative file)
+	imported, err := s.contacts.ImportVCards(r.Context(), tmpFile.Name())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, &ErrBadRequest{Message: "failed to import contacts: " + err.Error()})
 		return
@@ -66,11 +75,3 @@ func (s *APIServer) HandleUploadVCards(w http.ResponseWriter, r *http.Request) {
 		"contacts": imported,
 	})
 }
-
-
-
-
-
-
-
-
