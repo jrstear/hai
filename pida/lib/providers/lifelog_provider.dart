@@ -48,7 +48,7 @@ class ConversationSummary {
   final String startTime; // HH:MM format
   final List<String> participantNames; // Speaker names (fallback)
   final List<String> participantContactIds; // Contact IDs (when associated)
-  final bool hasUser; // Whether "You" is a participant
+  final bool hasUser; // Whether the user is a participant (detected by matching user_name from settings)
   final String summary; // First few words or title
   final ConversationTiming? timing;
 
@@ -64,8 +64,35 @@ class ConversationSummary {
   });
 }
 
+/// Helper to normalize a name for comparison (lowercase, trim)
+String _normalizeNameForComparison(String name) {
+  return name.trim().toLowerCase();
+}
+
+/// Helper to check if two names match (exact match or fuzzy match)
+bool _namesMatchForComparison(String name1, String name2) {
+  final normalized1 = _normalizeNameForComparison(name1);
+  final normalized2 = _normalizeNameForComparison(name2);
+  
+  // Exact match
+  if (normalized1 == normalized2) return true;
+
+  // Check if one name contains the other (for partial matches)
+  if (normalized1.contains(normalized2) || normalized2.contains(normalized1)) {
+    final shorter = normalized1.length < normalized2.length ? normalized1 : normalized2;
+    // Only allow if the shorter name is at least 3 characters
+    // to avoid false matches like "a" matching "alice"
+    if (shorter.length >= 3) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /// Helper to extract conversation summaries from LifelogResponse
-List<ConversationSummary> extractConversationSummaries(LifelogResponse response) {
+/// [userName] is the user's name from settings (e.g., "Jon Stearley") - used to detect when user is a participant
+List<ConversationSummary> extractConversationSummaries(LifelogResponse response, {String? userName}) {
   final summaries = <ConversationSummary>[];
   
   // Group blockquotes by lifelog_id
@@ -97,10 +124,11 @@ List<ConversationSummary> extractConversationSummaries(LifelogResponse response)
         .toSet()
         .toList();
     
-    // Check if "You" is a participant (speaker_name is "You" or speakerIdentifier is "user")
-    final hasUser = blockquotes.any((bq) {
+    // Check if the user is a participant by matching speaker name to user's name from settings
+    // Onboarding replaces "You" with user_name before storing, so we only need to match user_name
+    final hasUser = userName != null && userName.isNotEmpty && blockquotes.any((bq) {
       final speakerName = bq.speakerName.toLowerCase().trim();
-      return speakerName == 'you';
+      return _namesMatchForComparison(speakerName, userName);
     });
     
     // Get summary (title or first few words of first blockquote)
@@ -153,6 +181,6 @@ String _formatTimeTo12Hour(String timeStr, int timestampMs) {
   final period = hour >= 12 ? 'PM' : 'AM';
   final hour12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
   
-  return '${hour12}:${minute.toString().padLeft(2, '0')} $period';
+  return '$hour12:${minute.toString().padLeft(2, '0')} $period';
 }
 

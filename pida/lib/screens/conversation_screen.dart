@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:pida/models/contact.dart';
 import 'package:pida/models/lifelog.dart';
+import 'package:pida/providers/config_provider.dart';
 import 'package:pida/providers/contacts_provider.dart';
 import 'package:pida/providers/filter_provider.dart';
 import 'package:pida/providers/lifelog_provider.dart';
@@ -75,13 +76,21 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       return; // Already initialized
     }
 
+    // Get user name once (used to skip user from contact matching)
+    final userName = ref.read(userNameProvider);
+
     // Match speaker names to contact IDs
     final matchedContactIds = <String>[];
     for (final participantName in participantNames) {
       final normalizedName = _normalizeName(participantName);
       
-      // Skip "You" and "Unknown"
-      if (normalizedName == 'you' || normalizedName == 'unknown') {
+      // Skip "Unknown"
+      if (normalizedName == 'unknown') {
+        continue;
+      }
+      
+      // Skip if this is the user (matched by name)
+      if (userName != null && userName.isNotEmpty && _namesMatch(normalizedName, _normalizeName(userName))) {
         continue;
       }
 
@@ -205,9 +214,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               .toSet()
               .toList();
           
-          // Check if "You" is a participant
-          final hasUser = participantNames.any((name) => 
-              name.toLowerCase().trim() == 'you');
+          // Check if the user is a participant by matching participant names to user's name from settings
+          // Onboarding replaces "You" with user_name before storing, so we only need to match user_name
+          final userName = ref.watch(userNameProvider);
+          final hasUser = userName != null && userName.isNotEmpty && participantNames.any((name) {
+            return _namesMatch(_normalizeName(name), _normalizeName(userName));
+          });
           
           // Check if "Unknown" is a participant
           final hasUnknown = participantNames.any((name) => 
@@ -473,6 +485,78 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     bool isUnknown,
     String? associatedContactId,
   ) {
+    // Check if this blockquote is from the user by matching speaker name to user's name from settings
+    // Onboarding replaces "You" with user_name before storing, so we only need to match user_name
+    final userName = ref.watch(userNameProvider);
+    final isUserSpeaker = userName != null && userName.isNotEmpty && 
+                          _namesMatch(_normalizeName(blockquote.speakerName), _normalizeName(userName));
+    
+    // If this is the user speaking, show "You" avatar (with user's contact picture if available)
+    if (isUserSpeaker) {
+      final contactsAsync = ref.watch(contactsProvider);
+      return contactsAsync.when(
+        data: (contactListResponse) {
+          // Try to find the contact that matches the user's name
+          final userContact = contactListResponse.contacts.firstWhere(
+            (contact) => userName != null && userName.isNotEmpty &&
+                         _namesMatch(_normalizeName(contact.name), _normalizeName(userName)),
+            orElse: () => Contact(
+              id: '',
+              name: userName ?? 'You',
+              pictureUrl: null,
+              favoriteColor: null,
+            ),
+          );
+          
+          final displayName = userName ?? 'You';
+          return Container(
+            padding: const EdgeInsets.all(2), // Border width
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Theme.of(context).colorScheme.primary,
+                width: 2,
+              ),
+            ),
+            child: ContactAvatar(
+              name: displayName,
+              pictureUrl: userContact.pictureUrl,
+              favoriteColor: userContact.favoriteColor,
+              size: 24,
+            ),
+          );
+        },
+        loading: () => Container(
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Theme.of(context).colorScheme.primary,
+              width: 2,
+            ),
+          ),
+          child: ContactAvatar(
+            name: userName ?? 'You',
+            size: 24,
+          ),
+        ),
+        error: (error, stack) => Container(
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Theme.of(context).colorScheme.primary,
+              width: 2,
+            ),
+          ),
+          child: ContactAvatar(
+            name: userName ?? 'You',
+            size: 24,
+          ),
+        ),
+      );
+    }
+    
     // If blockquote is associated with a contact, show contact avatar
     if (associatedContactId != null) {
       final contactsAsync = ref.watch(contactsProvider);

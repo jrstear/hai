@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 /// Contact avatar widget
@@ -32,25 +34,76 @@ class ContactAvatar extends StatelessWidget {
           color: Colors.grey[300],
         ),
         child: ClipOval(
-          child: Image.network(
-            pictureUrl!,
-            width: size,
-            height: size,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              // Fall back to initials if image fails to load
-              return _buildInitialsAvatar(context);
-            },
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return _buildInitialsAvatar(context);
-            },
-          ),
+          child: _buildImageWidget(context),
         ),
       );
     }
 
     // No picture URL, use initials
+    return _buildInitialsAvatar(context);
+  }
+
+  /// Build the appropriate image widget based on pictureUrl format
+  Widget _buildImageWidget(BuildContext context) {
+    final url = pictureUrl!;
+
+    // Handle data URI (data:image/...)
+    if (url.startsWith('data:image')) {
+      try {
+        final uriData = Uri.parse(url).data;
+        if (uriData != null && uriData.isBase64) {
+          final imageBytes = uriData.contentAsBytes();
+          return Image.memory(
+            imageBytes,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              return _buildInitialsAvatar(context);
+            },
+          );
+        }
+      } catch (e) {
+        // Fall through to initials
+        return _buildInitialsAvatar(context);
+      }
+    }
+    // Handle network URL (http:// or https://)
+    else if (url.startsWith('http://') || url.startsWith('https://')) {
+      return Image.network(
+        url,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return _buildInitialsAvatar(context);
+        },
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return _buildInitialsAvatar(context);
+        },
+      );
+    }
+    // Assume base64 string (common in vCards)
+    else {
+      try {
+        final imageBytes = base64Decode(url);
+        return Image.memory(
+          imageBytes,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return _buildInitialsAvatar(context);
+          },
+        );
+      } catch (e) {
+        // Invalid base64, fall back to initials
+        return _buildInitialsAvatar(context);
+      }
+    }
+
+    // Fallback to initials if we get here
     return _buildInitialsAvatar(context);
   }
 

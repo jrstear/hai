@@ -43,8 +43,37 @@ class ConversationParticipantsDisplay extends ConsumerWidget {
   });
 
   /// Build "You" avatar for the app user
-  Widget _buildYouAvatar(BuildContext context, String? userName) {
+  Widget _buildYouAvatar(BuildContext context, String? userName, List<Contact> contacts) {
     final displayName = userName ?? 'You';
+    
+    // Try to find the contact that matches the user's name
+    Contact? userContact;
+    if (userName != null && userName.isNotEmpty) {
+      try {
+        userContact = contacts.firstWhere(
+          (contact) {
+            final normalizedContactName = contact.name.trim().toLowerCase();
+            final normalizedUserName = userName.trim().toLowerCase();
+            // Exact match
+            if (normalizedContactName == normalizedUserName) return true;
+            // Check if one name contains the other (for partial matches)
+            if (normalizedContactName.contains(normalizedUserName) || 
+                normalizedUserName.contains(normalizedContactName)) {
+              final shorter = normalizedContactName.length < normalizedUserName.length 
+                  ? normalizedContactName 
+                  : normalizedUserName;
+              // Only allow if the shorter name is at least 3 characters
+              if (shorter.length >= 3) return true;
+            }
+            return false;
+          },
+        );
+      } catch (e) {
+        // No matching contact found, use null
+        userContact = null;
+      }
+    }
+    
     return Container(
       padding: const EdgeInsets.all(2), // Border width
       decoration: BoxDecoration(
@@ -56,6 +85,8 @@ class ConversationParticipantsDisplay extends ConsumerWidget {
       ),
       child: ContactAvatar(
         name: displayName,
+        pictureUrl: userContact?.pictureUrl,
+        favoriteColor: userContact?.favoriteColor,
         size: 32,
       ),
     );
@@ -108,7 +139,7 @@ class ConversationParticipantsDisplay extends ConsumerWidget {
               if (hasUser)
                 Container(
                   margin: const EdgeInsets.only(right: 4),
-                  child: _buildYouAvatar(context, userName),
+                  child: _buildYouAvatar(context, userName, contactListResponse.contacts),
                 ),
               
               // Add "?" icon for Unknown participants (consistent with calendar page)

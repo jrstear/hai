@@ -106,6 +106,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     List<ConversationSummary> summaries,
     List<String> selectedPeopleIds,
     List<Contact> contacts,
+    String? userName,
   ) {
     // If no people selected, return all conversations
     if (selectedPeopleIds.isEmpty) {
@@ -126,8 +127,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       for (final participantName in summary.participantNames) {
         final normalizedParticipant = _normalizeName(participantName);
         
-        // Skip "You" and "Unknown" - they don't match contacts
-        if (normalizedParticipant == 'you' || normalizedParticipant == 'unknown') {
+        // Skip "Unknown"
+        if (normalizedParticipant == 'unknown') {
+          continue;
+        }
+        
+        // Skip if this is the user (matched by name)
+        if (userName != null && userName.isNotEmpty && 
+            _namesMatch(normalizedParticipant, _normalizeName(userName))) {
           continue;
         }
 
@@ -170,8 +177,23 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   }
 
   /// Build "You" avatar for the app user
-  Widget _buildYouAvatar(BuildContext context, String? userName) {
+  /// [contacts] is the list of contacts to look up the user's contact picture
+  Widget _buildYouAvatar(BuildContext context, String? userName, {List<Contact>? contacts}) {
     final displayName = userName ?? 'You';
+    
+    // Try to find the contact that matches the user's name
+    Contact? userContact;
+    if (contacts != null && userName != null && userName.isNotEmpty) {
+      try {
+        userContact = contacts.firstWhere(
+          (contact) => _namesMatch(_normalizeName(contact.name), _normalizeName(userName)),
+        );
+      } catch (e) {
+        // No matching contact found, use null
+        userContact = null;
+      }
+    }
+    
     return Container(
       padding: const EdgeInsets.all(2), // Border width
       decoration: BoxDecoration(
@@ -183,6 +205,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       ),
       child: ContactAvatar(
         name: displayName,
+        pictureUrl: userContact?.pictureUrl,
+        favoriteColor: userContact?.favoriteColor,
         size: 32,
       ),
     );
@@ -262,7 +286,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           Expanded(
             child: lifelogAsync.when(
               data: (response) {
-                final summaries = extractConversationSummaries(response);
+                final userName = ref.watch(userNameProvider);
+                final summaries = extractConversationSummaries(response, userName: userName);
                 
                 // Apply people filter (local filtering)
                 // Filter conversations based on selected people
@@ -270,8 +295,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   data: (contactListResponse) {
                     return _filterConversationsByPeople(
                       summaries,
-                      selectedPeopleIds,
+                      selectedPeopleIds ?? <String>[],
                       contactListResponse.contacts,
+                      userName,
                     );
                   },
                   loading: () => summaries, // Show all while contacts load
@@ -409,7 +435,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             avatarWidgets.add(
                               Container(
                                 margin: const EdgeInsets.only(right: 4),
-                                child: _buildYouAvatar(context, userName),
+                                child: _buildYouAvatar(context, userName, contacts: contactListResponse.contacts),
                               ),
                             );
                           }
@@ -481,8 +507,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             final speakerNamesToShow = summary.participantNames
                                 .where((name) {
                                   final normalized = _normalizeName(name);
-                                  // Exclude "you", "unknown", and names that already have contact avatars
-                                  return normalized != 'you' && 
+                                  // Exclude user name matches, "unknown", and names that already have contact avatars
+                                  // (Onboarding replaces "You" with user_name, so we only need to match user_name)
+                                  final isUser = userName != null && userName.isNotEmpty && 
+                                                 _namesMatch(_normalizeName(userName), normalized);
+                                  return !isUser && 
                                          normalized != 'unknown' &&
                                          !addedContactNames.contains(normalized);
                                 })
@@ -520,7 +549,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                               filteredContactIds.length + 
                               summary.participantNames.where((n) {
                                 final normalized = _normalizeName(n);
-                                return normalized != 'you' && normalized != 'unknown';
+                                // Exclude "unknown" and user name matches
+                                if (normalized == 'unknown') return false;
+                                if (userName != null && userName.isNotEmpty && 
+                                    _namesMatch(_normalizeName(userName), normalized)) {
+                                  return false;
+                                }
+                                return true;
                               }).length +
                               (hasUnknown ? 1 : 0);
                           

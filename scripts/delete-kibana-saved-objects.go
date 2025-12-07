@@ -188,3 +188,4 @@ func indexPatternExists(client *http.Client, kibanaURL, name string) (bool, erro
 
 
 
+

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,15 +78,40 @@ func (e *Exporter) ExportLifelogs(ctx context.Context, lifelogFilePath string) (
 	// Load contacts for name matching (optional - contacts may not be loaded yet)
 	var contacts []Contact
 	var esClient *elasticsearch.Client
+
+	// Check if we need to replace "You" - if so, we MUST have esClient
+	needsReplacement := false
+	for _, ll := range lifelogs {
+		for _, content := range ll.Contents {
+			if content.Type == "blockquote" {
+				if strings.ToLower(strings.TrimSpace(content.SpeakerName)) == "you" {
+					needsReplacement = true
+					break
+				}
+			}
+		}
+		if needsReplacement {
+			break
+		}
+	}
+
+	// Create ES client if needed (for replacing "You" or loading contacts)
 	if e.esURL != "" {
 		var err error
 		esClient, err = e.createESClient(e.esURL)
 		if err == nil {
+			// Load contacts for name matching
 			loadedContacts, err := e.loadContacts(ctx, esClient)
 			if err == nil {
 				contacts = loadedContacts
 			}
+		} else if needsReplacement {
+			// Log warning if we need replacement but can't create client
+			log.Printf("Warning: Need to replace 'You' but failed to create ES client: %v. 'You' will not be replaced.", err)
 		}
+	} else if needsReplacement {
+		// Log warning if we need replacement but no esURL is configured
+		log.Printf("Warning: Need to replace 'You' but esURL is not configured. 'You' will not be replaced. Set esURL when creating exporter to enable replacement.")
 	}
 
 	// Export lifelogs and blockquotes
@@ -150,11 +176,22 @@ func (e *Exporter) ExportLifelogs(ctx context.Context, lifelogFilePath string) (
 				blockquoteID := fmt.Sprintf("bq_%s", uuid.New().String()[:8])
 
 				// Replace "You" with actual user name from settings if available
+				// This MUST happen before storage - "You" should never be stored in blockquotes
 				speakerName := content.SpeakerName
-				if strings.ToLower(strings.TrimSpace(speakerName)) == "you" && esClient != nil {
-					userName, err := e.loadUserName(ctx, esClient)
-					if err == nil && userName != "" {
-						speakerName = userName
+				if strings.ToLower(strings.TrimSpace(speakerName)) == "you" {
+					if esClient != nil {
+						userName, err := e.loadUserName(ctx, esClient)
+						if err == nil && userName != "" {
+							speakerName = userName
+							log.Printf("Replaced 'You' with '%s' in blockquote %s", userName, blockquoteID)
+						} else if err != nil {
+							log.Printf("Warning: Failed to load user_name from settings: %v. Keeping 'You' as speaker name.", err)
+						} else {
+							log.Printf("Warning: user_name setting not found in settings. Keeping 'You' as speaker name.")
+						}
+					} else {
+						// This should not happen if needsReplacement check worked, but handle gracefully
+						log.Printf("Warning: Cannot replace 'You' - ES client not available. Speaker name will remain 'You'.")
 					}
 				}
 
