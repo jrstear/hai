@@ -414,9 +414,24 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             );
                           }
                           
-                          // Add contact avatars for associated contacts
-                          if (contactIdsToUse.isNotEmpty) {
-                            final participantContacts = contactIdsToUse
+                          // Filter out user's contact ID from contactIdsToUse when showing "You" avatar
+                          // This prevents showing both "You" avatar and user's contact avatar
+                          final filteredContactIds = <String>[];
+                          if (summary.hasUser && userName != null && userName.isNotEmpty) {
+                            // Find the contact that matches the user's name
+                            final userContact = contactListResponse.contacts.firstWhere(
+                              (contact) => _namesMatch(_normalizeName(contact.name), _normalizeName(userName)),
+                              orElse: () => Contact(id: '', name: ''),
+                            );
+                            // Filter out user's contact ID
+                            filteredContactIds.addAll(contactIdsToUse.where((id) => id != userContact.id));
+                          } else {
+                            filteredContactIds.addAll(contactIdsToUse);
+                          }
+                          
+                          // Add contact avatars for associated contacts (excluding user's contact if "You" is shown)
+                          if (filteredContactIds.isNotEmpty) {
+                            final participantContacts = filteredContactIds
                                 .take(3 - (summary.hasUser ? 1 : 0)) // Reserve space for "You"
                                 .map((id) => contactListResponse.contacts.firstWhere(
                                       (contact) => contact.id == id,
@@ -447,12 +462,29 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                               _normalizeName(name) == 'unknown');
                           
                           // Add speaker avatars for non-associated speakers (fallback)
+                          // Exclude names that already have contact avatars shown
                           if (avatarWidgets.length < 3 && summary.participantNames.isNotEmpty) {
                             final remainingSlots = 3 - avatarWidgets.length;
+                            // Get names of contacts that were already added as avatars
+                            final addedContactNames = filteredContactIds
+                                .take(3 - (summary.hasUser ? 1 : 0))
+                                .map((id) {
+                                  final contact = contactListResponse.contacts.firstWhere(
+                                    (c) => c.id == id,
+                                    orElse: () => Contact(id: id, name: ''),
+                                  );
+                                  return _normalizeName(contact.name);
+                                })
+                                .where((name) => name.isNotEmpty)
+                                .toSet();
+                            
                             final speakerNamesToShow = summary.participantNames
                                 .where((name) {
                                   final normalized = _normalizeName(name);
-                                  return normalized != 'you' && normalized != 'unknown';
+                                  // Exclude "you", "unknown", and names that already have contact avatars
+                                  return normalized != 'you' && 
+                                         normalized != 'unknown' &&
+                                         !addedContactNames.contains(normalized);
                                 })
                                 .take(remainingSlots)
                                 .toList();
@@ -485,7 +517,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                           
                           final totalParticipants = 
                               (summary.hasUser ? 1 : 0) + 
-                              contactIdsToUse.length + 
+                              filteredContactIds.length + 
                               summary.participantNames.where((n) {
                                 final normalized = _normalizeName(n);
                                 return normalized != 'you' && normalized != 'unknown';
