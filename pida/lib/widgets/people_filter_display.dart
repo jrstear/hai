@@ -48,9 +48,9 @@ class PeopleFilterDisplay extends ConsumerWidget {
 
         // Build avatar row (right-aligned to edge)
         return Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
+            mainAxisAlignment: MainAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
               // Clear filter button (X) - only shown when there are selected people
               if (selectedContacts.isNotEmpty)
                 IconButton(
@@ -88,9 +88,9 @@ class PeopleFilterDisplay extends ConsumerWidget {
         );
       },
       loading: () => Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: [
+          mainAxisAlignment: MainAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
             if (selectedPeopleIds.isNotEmpty) ...[
               IconButton(
                 icon: const Icon(Icons.close),
@@ -126,9 +126,9 @@ class PeopleFilterDisplay extends ConsumerWidget {
           ],
       ),
       error: (error, stack) => Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: [
+          mainAxisAlignment: MainAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
             if (selectedPeopleIds.isNotEmpty) ...[
               IconButton(
                 icon: const Icon(Icons.close),

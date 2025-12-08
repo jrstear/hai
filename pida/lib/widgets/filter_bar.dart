@@ -38,25 +38,17 @@ class FilterBar extends StatelessWidget {
     Widget content = Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Left content (time/date filter) - takes available space, but allows right content to reach edge
+        // Left content (time/date filter) - takes only space it needs
         if (leftContent != null)
-          Flexible(
-            child: leftContent!,
-            flex: 2,
-          ),
+          leftContent!,
         
-        // Spacer between left and right content
+        // Spacer pushes right content to the edge
         if (leftContent != null && rightContent != null)
-          const SizedBox(width: 8),
+          const Spacer(),
         
-        // Right content (people filter) - right-aligned to edge
+        // Right content (people filter) - at right edge
         if (rightContent != null)
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: rightContent!,
-            ),
-          ),
+          rightContent!,
       ],
     );
 
@@ -69,10 +61,10 @@ class FilterBar extends StatelessWidget {
       );
     }
 
-    // Adjust padding to allow right content to reach edge
+    // Remove right padding so + button can reach the edge
     final adjustedPadding = EdgeInsets.only(
       left: padding.left,
-      right: 0, // No right padding so + button can reach edge
+      right: 0,
       top: padding.top,
       bottom: padding.bottom,
     );
