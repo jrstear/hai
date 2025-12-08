@@ -98,9 +98,23 @@ flutter doctor --android-licenses
 yes | flutter doctor --android-licenses
 ```
 
-## Step 1.3: Verify Complete Setup
+## Step 1.3: Install Required Android SDK Components
 
-After installing cmdline-tools and accepting licenses:
+After accepting licenses, install the Android SDK platform and build tools that Flutter requires:
+
+```bash
+# Install Android SDK Platform 36
+/Users/jrstear/Library/Android/sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-36"
+
+# Install Android BuildTools (Flutter may require specific version)
+/Users/jrstear/Library/Android/sdk/cmdline-tools/latest/bin/sdkmanager "build-tools;28.0.3"
+```
+
+**Note:** Flutter may also use newer build-tools versions. The sdkmanager will install what's needed.
+
+## Step 1.4: Verify Complete Setup
+
+After installing cmdline-tools, accepting licenses, and installing SDK components:
 
 ```bash
 cd /Users/jrstear/mine/git/hai/pida
@@ -109,11 +123,11 @@ flutter doctor -v
 
 **Expected Output:**
 ```
-[✓] Android toolchain - develop for Android devices (Android SDK version 35.0.1)
+[✓] Android toolchain - develop for Android devices (Android SDK version 36.0.0)
     • Android SDK at /Users/jrstear/Library/Android/sdk
-    • Platform android-35, build-tools 35.0.1
+    • Platform android-36, build-tools 36.0.0
     • Java binary at: /path/to/java
-    • Java version: Java version X.X.X
+    • Java version: OpenJDK Runtime Environment (build 17+ or 21+)
     • ANDROID_HOME = /Users/jrstear/Library/Android/sdk
     • cmdline-tools component is installed
     • All Android licenses accepted
@@ -141,11 +155,16 @@ flutter doctor -v | grep -A 10 "Android toolchain"
 flutter devices
 ```
 
-## Next Steps
+## Status: ✅ COMPLETE
 
-Once Phase 1 is complete:
+Phase 1 is complete:
 - ✅ cmdline-tools installed
 - ✅ Licenses accepted
+- ✅ Android SDK 36 and BuildTools installed
 - ✅ Flutter doctor shows Android toolchain as fully configured
 
-Then proceed to **Phase 2: Configure Android Project**
+**Completed on:** 2025-12-07
+
+## Next Steps
+
+Proceed to **Phase 3: Set Up Testing Environment** (Phase 2 is already complete - Android project configured)

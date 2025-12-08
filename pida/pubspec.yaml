@@ -24,7 +24,7 @@ dependencies:
   flutter_secure_storage: ^9.0.0
   
   # File handling
-  file_picker: ^6.1.1
+  file_picker: ^8.1.6
   
   # Audio playback
   audioplayers: ^5.2.1
