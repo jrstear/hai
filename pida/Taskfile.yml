@@ -102,20 +102,38 @@ tasks:
           source ../.env
           set +a
         fi
-        # Find first available iOS simulator
-        IOS_DEVICE=$(flutter devices 2>&1 | grep -E "ios.*simulator" | head -1 | sed -E 's/.*• ([^ ]+) •.*/\1/' || echo "")
-        if [ -n "$IOS_DEVICE" ]; then
-          echo "Using iOS device: $IOS_DEVICE"
-          DEVICE_ARG="-d $IOS_DEVICE"
-        else
+        # Find first available iOS simulator (check for lines containing "ios" and "simulator")
+        IOS_DEVICE=$(flutter devices 2>&1 | grep -i "ios" | grep -i "simulator" | head -1 | sed -E 's/.*• ([^ ]+) •.*/\1/' || echo "")
+        if [ -z "$IOS_DEVICE" ]; then
           echo "No iOS simulator found. Opening Simulator app..."
           open -a Simulator
-          sleep 3
-          IOS_DEVICE=$(flutter devices 2>&1 | grep -E "ios.*simulator" | head -1 | sed -E 's/.*• ([^ ]+) •.*/\1/' || echo "ios")
-          DEVICE_ARG="-d $IOS_DEVICE"
+          echo "Waiting for simulator to boot (this may take 30-60 seconds)..."
+          sleep 5
+          # Wait up to 60 seconds for simulator to appear
+          for i in {1..12}; do
+            IOS_DEVICE=$(flutter devices 2>&1 | grep -i "ios" | grep -i "simulator" | head -1 | sed -E 's/.*• ([^ ]+) •.*/\1/' || echo "")
+            if [ -n "$IOS_DEVICE" ]; then
+              echo "Simulator ready: $IOS_DEVICE"
+              break
+            fi
+            echo "Waiting for simulator... ($i/12)"
+            sleep 5
+          done
         fi
+        if [ -z "$IOS_DEVICE" ]; then
+          echo "Error: No iOS simulator found after waiting."
+          echo ""
+          echo "To start an iOS simulator manually, run:"
+          echo "  open -a Simulator"
+          echo "  # Then select a device from Hardware > Device menu"
+          echo ""
+          echo "Or use:"
+          echo "  xcrun simctl boot <device-id>"
+          exit 1
+        fi
+        echo "Using iOS device: $IOS_DEVICE"
         echo "Starting Flutter iOS app..."
-        flutter run $DEVICE_ARG \
+        flutter run -d "$IOS_DEVICE" \
           --dart-define=PIDA_API_URL="${PIDA_API_URL:-{{.PIDA_API_URL}}}" \
           --dart-define=LIMITLESS_API_KEY="${LIMITLESS_API_KEY:-{{.LIMITLESS_API_KEY}}}" \
           --dart-define=RECORDING_DEVICE_ID="${RECORDING_DEVICE_ID:-{{.RECORDING_DEVICE_ID}}}"

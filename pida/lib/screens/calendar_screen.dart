@@ -296,7 +296,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   _scrollToBottom();
                 });
 
-                return _buildConversationsList(context, filteredSummaries, response.grouped);
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    // Refresh lifelog data from API
+                    ref.invalidate(lifelogProvider(dateStr));
+                    // Also refresh contacts to get any updates
+                    ref.invalidate(contactsProvider);
+                    // Wait for the refresh to complete
+                    await ref.read(lifelogProvider(dateStr).future);
+                    await ref.read(contactsProvider.future);
+                  },
+                  child: _buildConversationsList(context, filteredSummaries, response.grouped),
+                );
               },
               loading: () =>
                   const LoadingWidget(message: 'Loading conversations...'),
