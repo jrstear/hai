@@ -11,7 +11,7 @@ import 'package:pida/widgets/participant_avatar_helper.dart';
 /// Features:
 /// - Contact avatars (if contact_id exists) with picture or initials
 /// - Speaker name initials (if no contact_id)
-/// - Special green border for auto-matched contacts (both contact.name and speaker_name non-null)
+/// - Special purple border for auto-matched contacts (both contact.name and speaker_name non-null)
 /// - "?" icon for "Unknown" speakers
 /// - Right-justified, participants ordered left-to-right
 /// - + button at far right to add people

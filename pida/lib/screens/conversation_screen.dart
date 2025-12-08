@@ -8,7 +8,6 @@ import 'package:pida/providers/filter_provider.dart';
 import 'package:pida/providers/lifelog_provider.dart';
 import 'package:pida/services/audio_service.dart';
 import 'package:pida/services/api_client.dart';
-import 'package:pida/widgets/contact_avatar.dart';
 import 'package:pida/widgets/conversation_participants_display.dart';
 import 'package:pida/widgets/participant_avatar_helper.dart';
 import 'package:pida/widgets/error_widget.dart';
@@ -57,28 +56,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     if (oldWidget.lifelogId != widget.lifelogId) {
       _initializedLifelogId = null;
     }
-  }
-
-
-  /// Normalize a name for matching (lowercase, trim whitespace)
-  String _normalizeName(String name) {
-    return name.trim().toLowerCase();
-  }
-
-  /// Check if two names match (exact match or fuzzy match)
-  bool _namesMatch(String name1, String name2) {
-    // Exact match
-    if (name1 == name2) return true;
-
-    // Check if one name contains the other (for partial matches)
-    if (name1.contains(name2) || name2.contains(name1)) {
-      final shorter = name1.length < name2.length ? name1 : name2;
-      if (shorter.length >= 3) {
-        return true;
-      }
-    }
-
-    return false;
   }
 
   /// Open people selector for conversation
@@ -226,7 +203,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       children: [
         // Filter bar with title and participants
         FilterBar(
-          leftContent: _buildConversationTitle(context, conversationTitle),
+          leftContent: _buildConversationTitle(context, conversationTitle, firstBlockquote),
           rightContent: ConversationParticipantsDisplay(
             lifelogId: lifelogId,
             orderedParticipants: orderedParticipants,
@@ -425,7 +402,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   /// Build the avatar for a blockquote (contact avatar if associated, speaker avatar otherwise)
-  /// Treats everyone the same - no special "You" logic
+  /// Uses the shared helper for consistent highlighting logic across all screens
   Widget _buildBlockquoteAvatar(
     BuildContext context,
     WidgetRef ref,
@@ -435,88 +412,88 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     String? associatedContactId,
     List<({String speakerName, String? contactId})> orderedParticipants,
   ) {
-    // If blockquote is associated with a contact, show contact avatar
-    if (associatedContactId != null) {
-      final contactsAsync = ref.watch(contactsProvider);
-      return contactsAsync.when(
-        data: (contactListResponse) {
-          final contact = contactListResponse.contacts.firstWhere(
-            (c) => c.id == associatedContactId,
-            orElse: () => Contact(id: associatedContactId, name: 'Unknown'),
-          );
-          
-          // Check if contact name matches speaker name (for highlighting)
-          final nameMatches = _namesMatch(
-            _normalizeName(blockquote.speakerName),
-            _normalizeName(contact.name),
-          );
-          
-          final avatar = ContactAvatar(
-            name: contact.name,
-            pictureUrl: contact.pictureUrl,
-            favoriteColor: contact.favoriteColor,
-            size: 24,
-          );
-          
-          // Add green border if name matches speaker name
-          if (nameMatches) {
-            return Container(
-              padding: const EdgeInsets.all(2), // Border width
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: Colors.green,
-                  width: 2,
-                ),
-              ),
-              child: avatar,
-            );
-          }
-          
-          return avatar;
-        },
-        loading: () => const SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        error: (error, stack) => SpeakerAvatar(
-          speakerName: blockquote.speakerName,
-          size: 24,
-        ),
-      );
-    }
-
-    // If unknown and not associated, make clickable
-    if (isUnknown) {
-      return InkWell(
-        onTap: () => _handleUnknownSpeakerClick(
-          context,
-          ref,
-          blockquote,
-          lifelogId,
-          orderedParticipants,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        child: SpeakerAvatar(
-          speakerName: blockquote.speakerName,
-          size: 24,
-        ),
-      );
-    }
-
-    // Known speaker, show speaker avatar
-    return SpeakerAvatar(
+    // Use contact_id from API first, fall back to local state if not yet persisted
+    final contactId = associatedContactId;
+    
+    // Build participant tuple for the helper
+    final participant = (
       speakerName: blockquote.speakerName,
-      size: 24,
+      contactId: contactId,
+    );
+    
+    // Use shared helper for consistent avatar display and highlighting
+    final contactsAsync = ref.watch(contactsProvider);
+    return contactsAsync.when(
+      data: (contactListResponse) {
+        // Use shared helper which handles highlighting logic consistently
+        final avatarWidget = buildParticipantAvatar(
+          participant: participant,
+          contacts: contactListResponse.contacts,
+          size: 24,
+        );
+        
+        // If unknown and not associated, make clickable
+        if (isUnknown && contactId == null) {
+          // Use GestureDetector instead of InkWell to avoid layout issues
+          // The avatarWidget already has margin, so we wrap it properly
+          return GestureDetector(
+            onTap: () => _handleUnknownSpeakerClick(
+              context,
+              ref,
+              blockquote,
+              lifelogId,
+              orderedParticipants,
+            ),
+            child: avatarWidget,
+          );
+        }
+        
+        return avatarWidget;
+      },
+      loading: () => const SizedBox(
+        width: 24,
+        height: 24,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+      error: (error, stack) {
+        // Fallback to speaker avatar if contacts fail to load
+        // If unknown and not associated, make clickable
+        if (isUnknown && contactId == null) {
+          return GestureDetector(
+            onTap: () => _handleUnknownSpeakerClick(
+              context,
+              ref,
+              blockquote,
+              lifelogId,
+              orderedParticipants,
+            ),
+            child: SpeakerAvatar(
+              speakerName: blockquote.speakerName,
+              size: 24,
+            ),
+          );
+        }
+        return SpeakerAvatar(
+          speakerName: blockquote.speakerName,
+          size: 24,
+        );
+      },
     );
   }
 
 
   /// Build conversation title widget for filter bar
-  Widget _buildConversationTitle(BuildContext context, String title) {
+  /// Includes date in MM/DD format before the title
+  Widget _buildConversationTitle(BuildContext context, String title, Blockquote firstBlockquote) {
+    // Format date as MM/DD from the first blockquote's start time
+    final dateTime = DateTime.fromMillisecondsSinceEpoch(
+      firstBlockquote.startOffsetMs,
+      isUtc: true,
+    ).toLocal();
+    final datePrefix = DateFormat('MM/dd').format(dateTime);
+    
     return Text(
-      title,
+      '$datePrefix:     $title',
       style: Theme.of(context).textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.bold,
           ),

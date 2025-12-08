@@ -183,7 +183,7 @@ func (e *Exporter) ExportLifelogs(ctx context.Context, lifelogFilePath string) (
 						userName, err := e.loadUserName(ctx, esClient)
 						if err == nil && userName != "" {
 							speakerName = userName
-							log.Printf("Replaced 'You' with '%s' in blockquote %s", userName, blockquoteID)
+							// log.Printf("Replaced 'You' with '%s' in blockquote %s", userName, blockquoteID)
 						} else if err != nil {
 							log.Printf("Warning: Failed to load user_name from settings: %v. Keeping 'You' as speaker name.", err)
 						} else {

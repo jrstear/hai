@@ -458,9 +458,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             }
                           }
                           
-                          // Check if there are Unknown participants
-                          final hasUnknown = summary.participantNames.any((name) =>
-                              _normalizeName(name) == 'unknown');
+                          // Check if there are Unknown participants WITHOUT contact_id
+                          // Only show "?" for Unknown speakers that haven't been associated with a contact
+                          final hasUnknown = orderedTuples.any((tuple) {
+                            final normalizedName = _normalizeName(tuple.speakerName);
+                            return normalizedName == 'unknown' && 
+                                   (tuple.contactId == null || tuple.contactId!.isEmpty);
+                          });
                           
                           // Add speaker avatars for non-associated speakers (fallback)
                           // Exclude names that already have contact avatars shown
