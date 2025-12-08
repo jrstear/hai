@@ -43,12 +43,32 @@ tasks:
           source ../.env
           set +a
         fi
-        # Default to emulator-friendly URL (10.0.2.2 maps to host localhost)
-        # Override with PIDA_API_URL env var if needed (e.g., for physical device)
-        ANDROID_API_URL="${PIDA_API_URL:-http://10.0.2.2:8080}"
+        # Detect if running on emulator (check for emulator-* device)
+        DEVICE_ID=$(flutter devices 2>&1 | grep -E "emulator-[0-9]+" | head -1 | sed 's/.*• \([^ ]*\) •.*/\1/' || echo "")
+        if [ -n "$DEVICE_ID" ]; then
+          # Running on emulator - use 10.0.2.2 (maps to host localhost)
+          # Convert localhost/127.0.0.1 to emulator-friendly address
+          if [ -n "$PIDA_API_URL" ]; then
+            # Replace localhost or 127.0.0.1 with 10.0.2.2 for emulator
+            ANDROID_API_URL=$(echo "$PIDA_API_URL" | sed 's|http://localhost|http://10.0.2.2|g' | sed 's|http://127.0.0.1|http://10.0.2.2|g')
+            if [ "$ANDROID_API_URL" != "$PIDA_API_URL" ]; then
+              echo "Emulator detected: Converted localhost to 10.0.2.2 (emulator-friendly)"
+            fi
+          else
+            ANDROID_API_URL="http://10.0.2.2:8080"
+            echo "Emulator detected: Using emulator-friendly URL (10.0.2.2 maps to host localhost)"
+          fi
+          DEVICE_ARG="-d $DEVICE_ID"
+          echo "Using emulator: $DEVICE_ID"
+        else
+          # Physical device or no device specified - use PIDA_API_URL or default
+          ANDROID_API_URL="${PIDA_API_URL:-http://localhost:8080}"
+          DEVICE_ARG="-d android"
+          echo "Using device: android (or first available)"
+        fi
         echo "Starting Flutter Android app..."
-        echo "API URL: $ANDROID_API_URL (use PIDA_API_URL env var to override)"
-        flutter run -d android \
+        echo "API URL: $ANDROID_API_URL"
+        flutter run $DEVICE_ARG \
           --dart-define=PIDA_API_URL="$ANDROID_API_URL" \
           --dart-define=LIMITLESS_API_KEY="${LIMITLESS_API_KEY:-{{.LIMITLESS_API_KEY}}}" \
           --dart-define=RECORDING_DEVICE_ID="${RECORDING_DEVICE_ID:-{{.RECORDING_DEVICE_ID}}}"

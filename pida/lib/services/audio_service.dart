@@ -1,5 +1,4 @@
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pida/providers/api_key_provider.dart';
 import 'package:pida/providers/config_provider.dart';
@@ -14,27 +13,33 @@ enum AudioPlaybackState {
 }
 
 /// Audio playback service for Limitless API
-/// 
+///
 /// Handles streaming audio from Limitless API using the audioplayers package.
 /// Supports time range playback using start_ms and end_ms parameters.
-/// 
-/// For web platform, uses API proxy endpoint to handle API key headers.
-/// For mobile platforms, can call Limitless API directly (if headers are supported).
+///
+/// Uses the local API proxy endpoint (/api/limitless/audio) which handles
+/// authentication with the Limitless API (API key in headers).
+/// This works consistently across all platforms (web, Android, iOS).
 class AudioService {
   final AudioPlayer _player = AudioPlayer();
   final String? apiKey;
   final String? apiBaseUrl;
-  
+
   String? _currentUrl;
   int? _startMs;
   int? _endMs;
   AudioPlaybackState _state = AudioPlaybackState.stopped;
   String? _errorMessage;
-  
+
   // Callback for state changes (for notifying listeners)
   void Function()? _onStateChanged;
 
   AudioService({this.apiKey, this.apiBaseUrl}) {
+    // Configure player for better OGG/streaming support on Android
+    // Use MediaPlayer mode (not LowLatency) for better format support
+    // This is async but we can't await in constructor, so we'll set it before playing
+    _player.setPlayerMode(PlayerMode.mediaPlayer);
+    
     // Set up player event listeners
     _player.onPlayerStateChanged.listen((PlayerState playerState) {
       if (playerState == PlayerState.playing) {
@@ -47,6 +52,7 @@ class AudioService {
       _onStateChanged?.call();
     });
 
+    // Listen for player errors
     _player.onLog.listen((message) {
       // Log audio player messages for debugging
       print('AudioPlayer: $message');
@@ -65,25 +71,25 @@ class AudioService {
 
   /// Get current playback state
   AudioPlaybackState get state => _state;
-  
+
   /// Get error message if state is error
   String? get errorMessage => _errorMessage;
-  
+
   /// Get current playback position in milliseconds
   Future<int?> get position async {
     final pos = await _player.getCurrentPosition();
     return pos?.inMilliseconds;
   }
-  
+
   /// Get total duration in milliseconds
   Future<Duration?> get duration async {
     return await _player.getDuration();
   }
 
-  /// Play audio from Limitless API
-  /// 
+  /// Play audio from Limitless API via local proxy
+  ///
   /// [startMs] and [endMs] are Unix milliseconds (absolute timestamps)
-  /// These are used to construct the Limitless API URL with query parameters
+  /// These are used to construct the local API proxy URL with query parameters
   Future<void> play({
     required int startMs,
     required int endMs,
@@ -100,18 +106,20 @@ class AudioService {
       _startMs = startMs;
       _endMs = endMs;
 
-      // Construct audio URL - call Limitless API directly
-      // For web: Browsers can't set custom headers on audio requests, so we need proxy
-      // For mobile: Can potentially set headers, but audioplayers may not support it
-      // Solution: Use proxy for web, try direct for mobile (may need proxy there too)
-      final url = kIsWeb
-          ? _buildProxyUrl(startMs: startMs, endMs: endMs)
-          : _buildLimitlessApiUrl(startMs: startMs, endMs: endMs);
+      // Construct audio URL - always use proxy through local API server
+      // This ensures consistent behavior across platforms and allows the local API
+      // to handle authentication with Limitless API (API key in headers)
+      // The local API endpoint is: /api/limitless/audio?startMs=X&endMs=Y
+      final url = _buildProxyUrl(startMs: startMs, endMs: endMs);
       _currentUrl = url;
 
+      // Ensure player is in MediaPlayer mode for OGG streaming support
+      await _player.setPlayerMode(PlayerMode.mediaPlayer);
+      
       // Play the audio
       final source = UrlSource(url);
-      await _player.play(source);
+      print('Playing audio from URL: $url');
+      await _player.play(source, volume: 1.0);
       _state = AudioPlaybackState.playing;
       _onStateChanged?.call();
     } catch (e) {
@@ -165,7 +173,7 @@ class AudioService {
   }
 
   /// Seek to a specific position
-  /// 
+  ///
   /// [position] is in milliseconds
   Future<void> seek(Duration position) async {
     try {
@@ -183,23 +191,7 @@ class AudioService {
         _endMs == endMs;
   }
 
-  /// Build Limitless API URL with query parameters (for mobile)
-  String _buildLimitlessApiUrl({
-    required int startMs,
-    required int endMs,
-  }) {
-    const baseUrl = 'https://api.limitless.ai/v1/download-audio';
-    final url = Uri.parse(baseUrl).replace(
-      queryParameters: {
-        'startMs': startMs.toString(),
-        'endMs': endMs.toString(),
-      },
-    );
-    
-    return url.toString();
-  }
-
-  /// Build proxy URL through our API server (for web)
+  /// Build proxy URL through our API server (for all platforms)
   String _buildProxyUrl({
     required int startMs,
     required int endMs,
@@ -211,7 +203,7 @@ class AudioService {
         'endMs': endMs.toString(),
       },
     );
-    
+
     return url.toString();
   }
 
@@ -226,32 +218,34 @@ final audioServiceProvider = Provider<AudioService>((ref) {
   final apiKey = ref.watch(apiKeyProvider);
   final apiBaseUrl = ref.watch(apiBaseUrlProvider);
   final service = AudioService(apiKey: apiKey, apiBaseUrl: apiBaseUrl);
-  
+
   // Dispose when provider is disposed
   ref.onDispose(() {
     service.dispose();
   });
-  
+
   return service;
 });
 
 /// Provider for audio playback state (reactive)
-/// 
+///
 /// This provider watches the audio service and notifies listeners of state changes
-final audioPlaybackStateProvider = StateNotifierProvider<AudioPlaybackStateNotifier, AudioPlaybackState>((ref) {
+final audioPlaybackStateProvider =
+    StateNotifierProvider<AudioPlaybackStateNotifier, AudioPlaybackState>(
+        (ref) {
   final notifier = AudioPlaybackStateNotifier(ref);
-  
+
   // Set up state change callback
   final service = ref.read(audioServiceProvider);
   service.registerStateChangeListener(() {
     notifier._updateState();
   });
-  
+
   // Clean up listener when provider is disposed
   ref.onDispose(() {
     service.unregisterStateChangeListener();
   });
-  
+
   return notifier;
 });
 
