@@ -86,8 +86,20 @@ tasks:
           source ../.env
           set +a
         fi
+        # Find first available iOS simulator
+        IOS_DEVICE=$(flutter devices 2>&1 | grep -E "ios.*simulator" | head -1 | sed -E 's/.*• ([^ ]+) •.*/\1/' || echo "")
+        if [ -n "$IOS_DEVICE" ]; then
+          echo "Using iOS device: $IOS_DEVICE"
+          DEVICE_ARG="-d $IOS_DEVICE"
+        else
+          echo "No iOS simulator found. Opening Simulator app..."
+          open -a Simulator
+          sleep 3
+          IOS_DEVICE=$(flutter devices 2>&1 | grep -E "ios.*simulator" | head -1 | sed -E 's/.*• ([^ ]+) •.*/\1/' || echo "ios")
+          DEVICE_ARG="-d $IOS_DEVICE"
+        fi
         echo "Starting Flutter iOS app..."
-        flutter run -d ios \
+        flutter run $DEVICE_ARG \
           --dart-define=PIDA_API_URL="${PIDA_API_URL:-{{.PIDA_API_URL}}}" \
           --dart-define=LIMITLESS_API_KEY="${LIMITLESS_API_KEY:-{{.LIMITLESS_API_KEY}}}" \
           --dart-define=RECORDING_DEVICE_ID="${RECORDING_DEVICE_ID:-{{.RECORDING_DEVICE_ID}}}"
