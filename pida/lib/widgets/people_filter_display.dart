@@ -46,13 +46,11 @@ class PeopleFilterDisplay extends ConsumerWidget {
           return a.name.toLowerCase().compareTo(b.name.toLowerCase());
         });
 
-        // Build avatar row (right-aligned, expanding leftward)
-        return Align(
-          alignment: Alignment.centerRight,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
+        // Build avatar row (right-aligned to edge)
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
               // Clear filter button (X) - only shown when there are selected people
               if (selectedContacts.isNotEmpty)
                 IconButton(
@@ -78,7 +76,7 @@ class PeopleFilterDisplay extends ConsumerWidget {
                 );
               }),
               
-              // Add button (always at far right)
+              // Add button
               IconButton(
                 icon: const Icon(Icons.add_circle_outline),
                 onPressed: onAddTap,
@@ -87,15 +85,12 @@ class PeopleFilterDisplay extends ConsumerWidget {
                 constraints: const BoxConstraints(),
               ),
             ],
-          ),
         );
       },
-      loading: () => Align(
-        alignment: Alignment.centerRight,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
+      loading: () => Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
             if (selectedPeopleIds.isNotEmpty) ...[
               IconButton(
                 icon: const Icon(Icons.close),
@@ -129,14 +124,11 @@ class PeopleFilterDisplay extends ConsumerWidget {
               constraints: const BoxConstraints(),
             ),
           ],
-        ),
       ),
-      error: (error, stack) => Align(
-        alignment: Alignment.centerRight,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
+      error: (error, stack) => Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
             if (selectedPeopleIds.isNotEmpty) ...[
               IconButton(
                 icon: const Icon(Icons.close),
@@ -170,7 +162,6 @@ class PeopleFilterDisplay extends ConsumerWidget {
               constraints: const BoxConstraints(),
             ),
           ],
-        ),
       ),
     );
   }

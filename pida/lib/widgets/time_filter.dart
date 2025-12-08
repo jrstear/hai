@@ -35,35 +35,36 @@ class TimeFilter extends ConsumerWidget {
             goToPreviousCalendarDay(ref);
           },
           tooltip: 'Previous day',
+          constraints: const BoxConstraints(),
+          padding: const EdgeInsets.all(8),
         ),
         
-        // Date display with date picker
-        Expanded(
-          child: InkWell(
-            onTap: () async {
-              final DateTime? picked = await showDatePicker(
-                context: context,
-                initialDate: selectedDate,
-                firstDate: DateTime(2000),
-                lastDate: DateTime(2100),
-              );
-              if (picked != null) {
-                setCalendarDate(ref, picked);
-                onDateChanged?.call(picked);
-              }
-            },
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  DateFormat('EEEE, MMMM d').format(selectedDate),
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(width: 8),
-                const Icon(Icons.calendar_today, size: 18),
-              ],
-            ),
+        // Date display with date picker - only takes space it needs, left-aligned
+        InkWell(
+          onTap: () async {
+            final DateTime? picked = await showDatePicker(
+              context: context,
+              initialDate: selectedDate,
+              firstDate: DateTime(2000),
+              lastDate: DateTime(2100),
+            );
+            if (picked != null) {
+              setCalendarDate(ref, picked);
+              onDateChanged?.call(picked);
+            }
+          },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                DateFormat('EEE MM/dd').format(selectedDate),
+                style: Theme.of(context).textTheme.titleMedium,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.calendar_today, size: 18),
+            ],
           ),
         ),
         
@@ -74,6 +75,8 @@ class TimeFilter extends ConsumerWidget {
             goToNextCalendarDay(ref);
           },
           tooltip: 'Next day',
+          constraints: const BoxConstraints(),
+          padding: const EdgeInsets.all(8),
         ),
       ],
     );

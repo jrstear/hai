@@ -43,8 +43,24 @@ tasks:
           source ../.env
           set +a
         fi
+        # Check if any Android device/emulator is available
+        # Filter out error messages and only get actual device lines (lines with "android" and bullet points)
+        ANDROID_DEVICE=$(flutter devices 2>&1 | grep -E "^.*•.*•.*android" | head -1 | sed -E 's/.*• ([^ ]+) •.*/\1/' || echo "")
+        if [ -z "$ANDROID_DEVICE" ]; then
+          echo "No Android device/emulator found."
+          echo ""
+          echo "To start an Android emulator manually, run:"
+          echo "  flutter emulators --launch <emulator_id>"
+          echo ""
+          echo "Available emulators:"
+          flutter emulators 2>&1 | grep -E "android" || echo "  (none found)"
+          echo ""
+          echo "Or create a new emulator with:"
+          echo "  flutter emulators --create"
+          exit 1
+        fi
         # Detect if running on emulator (check for emulator-* device)
-        DEVICE_ID=$(flutter devices 2>&1 | grep -E "emulator-[0-9]+" | head -1 | sed 's/.*• \([^ ]*\) •.*/\1/' || echo "")
+        DEVICE_ID=$(flutter devices 2>&1 | grep -E "emulator-[0-9]+" | head -1 | sed -E 's/.*• ([^ ]+) •.*/\1/' || echo "")
         if [ -n "$DEVICE_ID" ]; then
           # Running on emulator - use 10.0.2.2 (maps to host localhost)
           # Convert localhost/127.0.0.1 to emulator-friendly address
@@ -61,10 +77,10 @@ tasks:
           DEVICE_ARG="-d $DEVICE_ID"
           echo "Using emulator: $DEVICE_ID"
         else
-          # Physical device or no device specified - use PIDA_API_URL or default
+          # Physical device - use PIDA_API_URL or default
           ANDROID_API_URL="${PIDA_API_URL:-http://localhost:8080}"
-          DEVICE_ARG="-d android"
-          echo "Using device: android (or first available)"
+          DEVICE_ARG="-d $ANDROID_DEVICE"
+          echo "Using device: $ANDROID_DEVICE"
         fi
         echo "Starting Flutter Android app..."
         echo "API URL: $ANDROID_API_URL"
